@@ -25,6 +25,12 @@ $Id: Core.lua 399 2022-11-06 13:25:42Z arithmandar $
   v2.13 - v2.14:
 	 Updated by: kamusis
 	 Bug fixes and improvements: Add sort function in All Chars tab
+  v2.20:
+	 Updated by: kamusis
+	 Priming Approach: one-time baseline initialization to avoid first-session skew;
+	 guarded CHAT_MSG_MONEY priming; one-time colored chat alert; minor lints
+	 hardening (LDB.text fallback, capture gsub return); removed duplicate
+	 hide_on_escape in reset dialog; added comprehensive inline comments.
 ]]
 -----------------------------------------------------------------------
 -- Upvalued Lua API.
@@ -130,6 +136,41 @@ local cyear = date("%Y")
 
 local profile
 local AC_FIRSTLOADED = false
+--
+-- Priming flag for one-time baseline initialization
+--
+-- Rationale:
+-- Historically, the addon used AC_FIRSTLOADED to block logging for the entire first
+-- session of a character to avoid counting the current balance as a fake "income".
+-- That prevented skew but also dropped all money changes during the first session.
+--
+-- The Priming Approach replaces that blanket suppression with a one-time baseline
+-- initialization. We set AC_LASTMONEY to the current balance exactly once ("prime")
+-- and then allow normal logging for the rest of the session. This avoids the initial
+-- fake income without losing subsequent changes.
+--
+-- AC_LOG_PRIMED = false means baseline not initialized yet; the first safe path
+-- (PLAYER_MONEY or CHAT_MSG_MONEY) will initialize it. After priming, logging runs
+-- normally. We will also clear AC_FIRSTLOADED at that time to preserve intent.
+local AC_LOG_PRIMED = false
+
+--
+-- One-time UI alert for baseline priming
+--
+-- We want to notify the player once per session when the addon performs the
+-- baseline priming. Using a separate guard ensures we don't spam the UI when
+-- multiple code paths (PLAYER_MONEY / CHAT_MSG_MONEY / updateLog) converge to
+-- the same priming operation.
+local AC_PRIMING_ALERTED = false
+local function AccountantClassic_ShowPrimingAlert()
+    if AC_PRIMING_ALERTED then return end
+    AC_PRIMING_ALERTED = true
+    -- One-time, noticeable chat message (yellow/orange) without using UIErrorsFrame.
+    -- Rationale: keep it visible yet unobtrusive, and consistent across UIs where
+    -- UIErrorsFrame may be hidden or styled away by other addons.
+    local msg = "|cffffd200Accountant Classic: Baseline primed. Subsequent money changes will be tracked.|r"
+    ACC_Print(msg)
+end
 
 local AccountantClassicDefaultOptions = {
 	version = AccountantClassic_Version, 
@@ -1038,14 +1079,24 @@ local function loadData()
 end
 
 local function updateLog()
-	-- if it's first time loaded this addon, then we don't need to update logs.
-	-- @kamusis. Need to consider optimizing this behavior later. Currently, when a character loads the addon for the first time (when there is no character data in WTF), the current total money will be calculated as one income value, which will result in overall income statistics that do not match the actual situation. Therefore, the log is not updated on first load.
-	-- @kamusis. However, when any character loads this addon for the first time, even if money changes occur during this period, they will not be recorded. This needs optimization.
-	if AC_FIRSTLOADED then
-		ACC_Print("Accountant_Classic: First loaded for this character.")
-		-- AC_FIRSTLOADED = false
-		return		
-	end
+    -- One-time baseline priming for first-load sessions
+    --
+    -- Explanation:
+    -- Instead of suppressing the entire first session (which would miss all money
+    -- changes), we perform a single baseline initialization. When AC_FIRSTLOADED is
+    -- true and we have not primed yet (AC_LOG_PRIMED is false), we set
+    -- AC_LASTMONEY to the current balance and store it in options.totalcash. Then we
+    -- mark AC_LOG_PRIMED = true and clear AC_FIRSTLOADED so subsequent calls proceed
+    -- with normal diff-based logging. We return immediately here to avoid treating
+    -- the initial balance as an income/outgoing delta.
+    if AC_FIRSTLOADED and not AC_LOG_PRIMED then
+        AC_LASTMONEY = GetMoney()
+        AccountantClassic_Profile["options"].totalcash = AC_LASTMONEY
+        AC_LOG_PRIMED = true
+        AC_FIRSTLOADED = false
+        AccountantClassic_ShowPrimingAlert()
+        return
+    end
 
 	local cdate = date("%d/%m/%y");
 	--local cmonth = date("%m");
@@ -1134,7 +1185,8 @@ function Accountant_Slash(msg)
 	end
 	local args = {n=0}
 	local function helper(word) tinsert(args, word) end
-	gsub(msg, "[_%w]+", helper)
+	-- Silence linter about discarding return values; we only need the callback side-effect.
+	local _ = gsub(msg, "[_%w]+", helper)
 	if args[1] == 'log'  then
 		ShowUIPanel(AccountantClassicFrame)
 	elseif args[1] == 'verbose' then
@@ -1194,6 +1246,25 @@ local function AccountantClassic_OnShareMoney(arg1)
 	end
 
 	money = copper + silver * 100 + gold * 10000
+
+	-- Baseline priming guard for first-load sessions
+	--
+	-- If the very first event we observe is CHAT_MSG_MONEY (shared loot message), we
+	-- must ensure we have a proper baseline before attempting to force-update logs.
+	-- Otherwise, we would manipulate AC_LASTMONEY and then have updateLog() perform
+	-- the one-time priming, which could lead to inconsistent AC_LASTMONEY values.
+	--
+	-- Therefore, when AC_FIRSTLOADED and not AC_LOG_PRIMED, we prime baseline here
+	-- and return without recording this message. Subsequent money changes will be
+	-- tracked normally. This mirrors the priming path used for PLAYER_MONEY.
+	if AC_FIRSTLOADED and not AC_LOG_PRIMED then
+		AC_LASTMONEY = GetMoney()
+		AccountantClassic_Profile["options"].totalcash = AC_LASTMONEY
+		AC_LOG_PRIMED = true
+		AC_FIRSTLOADED = false
+		AccountantClassic_ShowPrimingAlert()
+		return
+	end
 
 	if (not AC_LASTMONEY) then
 		AC_LASTMONEY = 0;
@@ -1452,16 +1523,27 @@ function AccountantClassic_OnEvent(self, event, ...)
 	elseif event == "CHAT_MSG_MONEY" then
 		AccountantClassic_OnShareMoney(arg1);
 	elseif event == "PLAYER_MONEY" then
-		if AccountantClassic_Verbose then	
-			ACC_Print("Player money changed, starting to update money log ...")
-		end
-		updateLog();
+        -- If baseline has not been initialized yet, use the first PLAYER_MONEY
+        -- event as a safe priming point. This sets AC_LASTMONEY to the current
+        -- balance and prevents the initial balance from being counted as income.
+        if not AC_LOG_PRIMED then
+            AC_LASTMONEY = GetMoney()
+            AccountantClassic_Profile["options"].totalcash = AC_LASTMONEY
+            AC_LOG_PRIMED = true
+            AC_FIRSTLOADED = false
+            AccountantClassic_ShowPrimingAlert()
+            return
+        end
+        if AccountantClassic_Verbose then	
+            ACC_Print("Player money changed, starting to update money log ...")
+        end
+        updateLog();
 	end
 
 	if AccountantClassic_Verbose and AC_LOGTYPE ~= oldType then ACC_Print("Accountant mode changed to '"..AC_LOGTYPE.."'"); end
 	
 	if (Accountant_ClassicSaveData) then
-		LDB.text = addon:ShowNetMoney(private.constants.ldbDisplayTypes[profile.ldbDisplayType])
+		LDB.text = addon:ShowNetMoney(private.constants.ldbDisplayTypes[profile.ldbDisplayType]) or ""
 	end
 end
 
@@ -1801,7 +1883,6 @@ function AccountantClassic_ResetData()
 		show_while_dead = true,
 		hide_on_escape = true,
 		is_exclusive = true,
-		hide_on_escape = true,
 		show_during_cinematic = false,
 		
 	});
@@ -2115,7 +2196,8 @@ function addon:OnEnable()
 	addon:PopulateCharacterList()
 	
 	self:Refresh()
-	LDB.text = addon:ShowNetMoney(private.constants.ldbDisplayTypes[profile.ldbDisplayType])
+	-- Ensure LDB.text is always a string; provide empty-string fallback to satisfy lints
+	LDB.text = addon:ShowNetMoney(private.constants.ldbDisplayTypes[profile.ldbDisplayType]) or ""
 end
 
 function addon:Toggle()
@@ -2139,7 +2221,8 @@ function addon:Refresh()
 	AccountantClassic_OnShow()
 	arrangeAccountantClassicFrame()
 	
-	LDB.text = addon:ShowNetMoney(private.constants.ldbDisplayTypes[profile.ldbDisplayType])
+	-- Ensure LDB.text is always a string; provide empty-string fallback to satisfy lints
+	LDB.text = addon:ShowNetMoney(private.constants.ldbDisplayTypes[profile.ldbDisplayType]) or ""
 end
 
 function AccountantClassic_ButtonToggle()
