@@ -58,3 +58,5 @@ Core\Template-Classic.xml
 Core\Core-Classic.xml
 Core\MoneyFrame.lua
 Core\Config.lua
+
+CurrencyTracker\CurrencyTracker.xml

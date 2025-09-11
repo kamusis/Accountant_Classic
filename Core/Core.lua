@@ -168,7 +168,7 @@ local function AccountantClassic_ShowPrimingAlert()
     -- One-time, noticeable chat message (yellow/orange) without using UIErrorsFrame.
     -- Rationale: keep it visible yet unobtrusive, and consistent across UIs where
     -- UIErrorsFrame may be hidden or styled away by other addons.
-    local msg = "|cffffd200Accountant Classic: Baseline primed. Subsequent money changes will be tracked.|r"
+    local msg = "|cffffd200Accountant Classic (Gold): Baseline primed. Subsequent money changes will be tracked.|r"
     ACC_Print(msg)
 end
 
@@ -1538,6 +1538,21 @@ function AccountantClassic_OnEvent(self, event, ...)
             ACC_Print("Player money changed, starting to update money log ...")
         end
         updateLog();
+	-- Currency tracking events
+	elseif event == "CURRENCY_DISPLAY_UPDATE" then
+		-- Avoid duplicate handling: CurrencyTracker.EventHandler registers its own frame
+		-- and receives CURRENCY_DISPLAY_UPDATE directly. Only forward as a fallback
+		-- if the module or its EventHandler is unavailable.
+		if not (CurrencyTracker and CurrencyTracker.EventHandler) then
+			if CurrencyTracker and CurrencyTracker.OnCurrencyDisplayUpdate then
+				CurrencyTracker:OnCurrencyDisplayUpdate(...)
+			end
+		end
+	elseif event == "BAG_UPDATE" then
+		-- Forward bag update events to CurrencyTracker for fallback currency detection
+		if CurrencyTracker and CurrencyTracker.OnBagUpdate then
+			CurrencyTracker:OnBagUpdate(arg1)
+		end
 	end
 
 	if AccountantClassic_Verbose and AC_LOGTYPE ~= oldType then ACC_Print("Accountant mode changed to '"..AC_LOGTYPE.."'"); end
@@ -2198,6 +2213,14 @@ function addon:OnEnable()
 	self:Refresh()
 	-- Ensure LDB.text is always a string; provide empty-string fallback to satisfy lints
 	LDB.text = addon:ShowNetMoney(private.constants.ldbDisplayTypes[profile.ldbDisplayType]) or ""
+	
+	-- Initialize and enable CurrencyTracker module if available
+	if CurrencyTracker and CurrencyTracker.Initialize then
+		CurrencyTracker:Initialize()
+		if CurrencyTracker.Enable then
+			CurrencyTracker:Enable()
+		end
+	end
 end
 
 function addon:Toggle()

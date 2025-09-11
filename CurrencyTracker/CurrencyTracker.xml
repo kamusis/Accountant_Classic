@@ -1,0 +1,13 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+    <!-- Currency Tracker Module Files -->
+    <!-- Load order is important: Constants -> Storage -> DataManager -> EventHandler -> UIController -> DisplayIntegration -> Core -->
+    
+    <Script file="CurrencyConstants.lua"/>
+    <Script file="CurrencyStorage.lua"/>
+    <Script file="CurrencyDataManager.lua"/>
+    <Script file="CurrencyEventHandler.lua"/>
+    <!-- UI components are intentionally disabled for headless mode -->
+    <!-- <Script file="CurrencyUIController.lua"/> -->
+    <!-- <Script file="CurrencyDisplayIntegration.lua"/> -->
+    <Script file="CurrencyCore.lua"/>
+</Ui>
