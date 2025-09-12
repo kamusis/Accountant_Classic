@@ -199,8 +199,13 @@ end
 
 -- Check if a currency is supported
 function DataManager:IsCurrencySupported(currencyID)
+    -- Always treat seeded currencies as supported when available
     if Constants and Constants.Utils and Constants.Utils.IsCurrencySupported then
-        return Constants.Utils.IsCurrencySupported(currencyID)
+        if Constants.Utils.IsCurrencySupported(currencyID) then
+            return true
+        end
+        -- Fall through to discovered currencies merge so newly discovered IDs
+        -- are recognized immediately even when Constants are present.
     end
 
     -- Include dynamically discovered currencies
@@ -262,13 +267,46 @@ end
 
 -- Get currency information by ID
 function DataManager:GetCurrencyInfo(currencyID)
+    -- Goal: always display localized names for the current client, without
+    -- changing SavedVariables shapes. We resolve an info table from any source
+    -- (constants or discovered), then override its name/icon with the live
+    -- WoW API if available.
+
+    local info
+
+    -- Try constants first to get rich metadata (expansion, patch, etc.)
     if Constants and Constants.Utils and Constants.Utils.GetCurrencyInfo then
-        return Constants.Utils.GetCurrencyInfo(currencyID)
+        info = Constants.Utils.GetCurrencyInfo(currencyID)
     end
 
-    -- Fallback implementation with discovered merge
-    local supported = self:GetSupportedCurrencies()
-    return supported[currencyID]
+    -- If constants don't know this id, try merged discovered set
+    if not info then
+        local supported = self:GetSupportedCurrencies()
+        info = supported[currencyID]
+    end
+
+    -- If we still don't have anything, create a minimal shell so we can apply
+    -- localization from the client API below.
+    if not info then
+        info = {
+            id = currencyID,
+            name = "Currency " .. tostring(currencyID),
+            minVersion = 0,
+            isTracked = true,
+            category = "Discovered",
+        }
+    end
+
+    -- Always prefer localized name/icon from the live client API when present.
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+        local ok, ci = pcall(C_CurrencyInfo.GetCurrencyInfo, currencyID)
+        if ok and type(ci) == "table" then
+            info.name = ci.name or info.name
+            info.icon = ci.iconFileID or info.icon
+        end
+    end
+
+    return info
 end
 
 -- Get currencies grouped by expansion for UI display

@@ -729,10 +729,15 @@ Notes:
   - Fallbacks: if no token or translation is available, show `S:<code>`.
 - The signed delta for a change is taken primarily from the event's `quantityChange`. If unavailable, we fall back to `newQuantity - lastQuantity`.
 
+Note:
+Right now `RecordEventMetadata()` writes to `Session` and `Total`. If you run `/ct meta show today 3008`, it will still say “No metadata” until we extend metadata writing/rolling for `Day/Week/Month/Year`.
+
 TODO:
 - Add rollover for currency data to achieve exact parity with gold:
   - Day -> PrvDay, Week -> PrvWeek, optionally Month -> PrvMonth, Year -> PrvYear.
   - Implement similarly to `AccountantClassic_LogsShifting()` in `Core/Core.lua`, but operating on `currencyData`.
+-- New: Extend metadata periods
+- Extend metadata recording to all main periods in `Storage:RecordEventMetadata()` (`Session, Day, Week, Month, Year, Total`), and implement synchronized rollover for `currencyMeta` inside `Storage:ShiftCurrencyLogs()` mirroring `currencyData` (including `PrvDay`, `PrvWeek`, `PrvMonth`, `PrvYear`).
 
 ### TODO: Runtime de-dup guard for duplicate currency events
 
@@ -875,6 +880,10 @@ Test plan
 
 Scope
 - Modules: `CurrencyTracker/CurrencyConstants.lua`, `Locale/localization.*.lua`, `CurrencyTracker/CurrencyCore.lua`, `CurrencyTracker/CurrencyDataManager.lua`
+
+Investigation
+SourceCode: 35 -> "QUEST_REWARD"
+
 
 Design
 - Source tokens

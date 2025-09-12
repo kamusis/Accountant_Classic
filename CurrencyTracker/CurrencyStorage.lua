@@ -657,6 +657,99 @@ function Storage:ValidateData()
     return true
 end
 
+-- Retrieve the table of dynamically discovered currencies for the current character.
+-- Returns a live table reference so callers can mutate it in-place.
+function Storage:GetDiscoveredCurrencies()
+    if not EnsureSavedVariablesStructure() then
+        return {}
+    end
+
+    local server, character = GetCurrentServerAndCharacter()
+    local charData = Accountant_ClassicSaveData[server][character]
+    charData.currencyDiscovery = charData.currencyDiscovery or {}
+
+    return charData.currencyDiscovery
+end
+
+-- Save basic metadata for a dynamically discovered currency so downstream
+-- modules (e.g., DataManager) can treat it as supported and allow tracking.
+-- Idempotent: safely merges/updates existing entry without clearing user-set flags.
+function Storage:SaveDiscoveredCurrency(currencyID)
+    if not currencyID then return false end
+    if not EnsureSavedVariablesStructure() then return false end
+
+    local discovery = self:GetDiscoveredCurrencies()
+    discovery[currencyID] = discovery[currencyID] or {}
+    local meta = discovery[currencyID]
+
+    -- Always store the id field
+    meta.id = currencyID
+
+    -- Populate name/icon from modern API when available; keep prior values if present
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+        local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfo, currencyID)
+        if ok and type(info) == "table" then
+            meta.name = meta.name or info.name or ("Currency " .. tostring(currencyID))
+            meta.icon = meta.icon or info.iconFileID
+        end
+    end
+
+    -- Default tracking to true unless explicitly set to false by the user
+    if meta.tracked == nil then
+        meta.tracked = true
+    end
+
+    -- Optional placeholders (non-authoritative without Constants): expansion/patch/category
+    meta.category = meta.category or "Discovered"
+
+    SafeLogDebug("Saved discovered currency metadata (id=%d, tracked=%s)", currencyID, tostring(meta.tracked))
+    return true
+end
+
+-- Record raw event metadata for analysis/diagnostics: counts of gain/lost sources
+-- and the last-seen snapshot. Minimal write path that is safe during early init.
+-- sign: +1 for gain, -1 for loss, used only for the 'last' snapshot (counters use absolute source ids)
+function Storage:RecordEventMetadata(currencyID, quantityGainSource, quantityLostSource, sign)
+    if not currencyID then return false end
+    if not EnsureSavedVariablesStructure() then return false end
+
+    local server, character = GetCurrentServerAndCharacter()
+    local sv = Accountant_ClassicSaveData
+    local charData = sv[server][character]
+    charData.currencyMeta = charData.currencyMeta or {}
+    charData.currencyMeta[currencyID] = charData.currencyMeta[currencyID] or {}
+
+    -- We record under two simple timeframes for now: Session and Total.
+    local tfs = { "Session", "Total" }
+    for _, tf in ipairs(tfs) do
+        local node = charData.currencyMeta[currencyID][tf] or {}
+        node.gain = node.gain or {}
+        node.lost = node.lost or {}
+
+        -- Increment counters using absolute source codes when available
+        local g = tonumber(quantityGainSource)
+        if g then
+            node.gain[g] = (node.gain[g] or 0) + 1
+        end
+        local l = tonumber(quantityLostSource)
+        if l then
+            node.lost[l] = (node.lost[l] or 0) + 1
+        end
+
+        -- Keep last snapshot for quick inspection
+        node.last = {
+            gain = quantityGainSource,
+            lost = quantityLostSource,
+            sign = sign,
+            t = time(),
+        }
+
+        charData.currencyMeta[currencyID][tf] = node
+    end
+
+    return true
+end
+
 -- Clean up old data based on retention settings
 function Storage:CleanupOldData()
     -- This will implement data retention policies in the future
