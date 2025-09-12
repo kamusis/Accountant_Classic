@@ -1,13 +1,13 @@
 ## Interface: 20504
 ## Title: Accountant Classic
 ## Title-deDE: Accountant Classic
-## Title-esES: Título
+## Title-esES: Accountant Classic
 ## Title-frFR: Accountant Classic
-## Title-koKR: |cFF00FF00[가계부]|rAccountant Classic 애드온
+## Title-koKR: Accountant Classic
 ## Title-ptBR: Accountant Classic
 ## Title-ruRU: Accountant Classic
-## Title-zhCN: |cFF00FF00[信息]|rAccountant Classic
-## Title-zhTW: |cFF00FF00[資訊]|r個人會計
+## Title-zhCN: Accountant Classic
+## Title-zhTW: Accountant Classic
 ## Notes: A basic tool to track your monetary and currencies incomings and outgoings within WoW.
 ## Notes-deDE: Ein einfaches Hilfsprogramm, um deine monetären Einnahmen und Ausgaben sowie deine Währungen in WoW zu verfolgen.
 ## Notes-esES: Una herramienta básica para rastrear tus ingresos y gastos de oro y monedas en WoW.
