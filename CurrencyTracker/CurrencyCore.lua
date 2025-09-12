@@ -533,11 +533,13 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
     -- Prefer the more specific 'show-all-currencies' before generic 'show'
     if cmd:find("^show%-all%-currencies") then
         local timeframe = select(1, CurrencyTracker:ParseShowCommand(cmd))
-        CurrencyTracker:PrintMultipleCurrencies(timeframe)
+        local verbose = cmd:find("verbose") ~= nil
+        CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
     elseif cmd:find("^show%-all") then
         -- Alias for show-all-currencies; execute the exact same path
         local timeframe = select(1, CurrencyTracker:ParseShowCommand(cmd))
-        CurrencyTracker:PrintMultipleCurrencies(timeframe)
+        local verbose = cmd:find("verbose") ~= nil
+        CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
     elseif cmd:find("^show") then
         CurrencyTracker:ShowCurrencyData(cmd)
     elseif cmd:find("^debug") then
@@ -704,7 +706,8 @@ function CurrencyTracker:ShowCurrencyData(command)
     local timeframe, currencyID = self:ParseShowCommand(command)
 
     if (command or ""):find("^%s*show%-all%-currencies") then
-        self:PrintMultipleCurrencies(timeframe)
+        local verbose = (command or ""):find("verbose") ~= nil
+        self:PrintMultipleCurrencies(timeframe, verbose)
         return
     end
 
@@ -791,7 +794,7 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
 end
 
 -- Print a summary across all currencies for a timeframe
-function CurrencyTracker:PrintMultipleCurrencies(timeframe)
+function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
     local currencies = {}
     if self.Storage and self.Storage.GetAvailableCurrencies then
         currencies = self.Storage:GetAvailableCurrencies() or {}
@@ -805,19 +808,30 @@ function CurrencyTracker:PrintMultipleCurrencies(timeframe)
     end
 
     print(string.format("=== All Currencies - %s ===", tostring(timeframe)))
+    -- Default behavior: hide currencies explicitly marked as tracked=false in discovery metadata.
+    -- Use 'verbose' option to include all currencies regardless of tracked flag.
+    local discovered = {}
+    if self.Storage and self.Storage.GetDiscoveredCurrencies then
+        discovered = self.Storage:GetDiscoveredCurrencies() or {}
+    end
+
     for _, cid in ipairs(currencies) do
-        local data = self.Storage and self.Storage:GetCurrencyData(cid, timeframe) or nil
-        local info = self.DataManager and self.DataManager:GetCurrencyInfo(cid) or nil
-        local name = (info and info.name) or ("Currency " .. tostring(cid))
-        if L and L[name] then name = L[name] end
-        local net = (data and data.net) or 0
-        print(string.format("%s (id=%d): Income %d | Outgoing %d | Net %s%d",
-            name,
-            cid,
-            (data and data.income) or 0,
-            (data and data.outgoing) or 0,
-            (net >= 0 and "+" or ""),
-            net))
+        local meta = discovered[cid]
+        local isTracked = (meta == nil) or (meta.tracked ~= false)
+        if verbose or isTracked then
+            local data = self.Storage and self.Storage:GetCurrencyData(cid, timeframe) or nil
+            local info = self.DataManager and self.DataManager:GetCurrencyInfo(cid) or nil
+            local name = (info and info.name) or ("Currency " .. tostring(cid))
+            if L and L[name] then name = L[name] end
+            local net = (data and data.net) or 0
+            print(string.format("%s (id=%d): Income %d | Outgoing %d | Net %s%d",
+                name,
+                cid,
+                (data and data.income) or 0,
+                (data and data.outgoing) or 0,
+                (net >= 0 and "+" or ""),
+                net))
+        end
     end
     print("=========================")
 end
@@ -855,6 +869,7 @@ function CurrencyTracker:ShowHelp()
     print("  /ct show-all this-year - Alias of show-all-currencies for this year")
     print("  /ct show-all prv-year - Alias of show-all-currencies for previous year")
     print("  /ct show-all total - Alias of show-all-currencies for total period")
+    print("  Tip: append 'verbose' to include untracked currencies in the summary (e.g., /ct show-all total verbose)")
     print("  /ct debug on|off - Toggle in-game debug logging for currency events")
     print("  /ct status - Show system status")
     print("  /ct discover list - List dynamically discovered currencies")
