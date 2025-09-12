@@ -336,6 +336,125 @@ end
 CurrencyTracker.VERSION = "1.0.0"
 CurrencyTracker.MIN_ADDON_VERSION = "2.20.00"
 
+-- Internal helpers for baseline preview/apply
+-- Fetch live quantity for a currency id using modern or legacy API.
+local function CT_GetRealCurrencyAmount(currencyID)
+    if not currencyID then return nil end
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+        local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfo, currencyID)
+        if ok and type(info) == "table" then
+            return info.quantity or 0
+        end
+    end
+    if _G.GetCurrencyInfo then
+        local ok, name, amount = pcall(_G.GetCurrencyInfo, currencyID)
+        if ok and name then
+            return amount or 0
+        end
+    end
+    return nil
+end
+
+-- Adjust Total-only by a signed delta without touching other periods.
+-- Positive delta increases Total.In; negative delta increases Total.Out.
+local function CT_ApplyTotalOnlyDelta(currencyID, delta)
+    if not currencyID or not delta or delta == 0 then return false end
+    if not EnsureSavedVariablesStructure or not GetCurrentServerAndCharacter then return false end
+    if not EnsureSavedVariablesStructure() then return false end
+    if CurrencyTracker.Storage and CurrencyTracker.Storage.InitializeCurrencyData then
+        CurrencyTracker.Storage:InitializeCurrencyData(currencyID)
+    end
+    local server, character = GetCurrentServerAndCharacter()
+    local sv = _G.Accountant_ClassicSaveData
+    if not (sv and sv[server] and sv[server][character]) then return false end
+    local charData = sv[server][character]
+    charData.currencyData = charData.currencyData or {}
+    charData.currencyData[currencyID] = charData.currencyData[currencyID] or {}
+    local bucket = charData.currencyData[currencyID]
+    bucket.Total = bucket.Total or {}
+    bucket.Total[0] = bucket.Total[0] or { In = 0, Out = 0 }
+    if delta > 0 then
+        bucket.Total[0].In = (bucket.Total[0].In or 0) + delta
+    else
+        bucket.Total[0].Out = (bucket.Total[0].Out or 0) + (-delta)
+    end
+    charData.currencyOptions = charData.currencyOptions or {}
+    charData.currencyOptions.lastUpdate = time()
+    return true
+end
+
+-- Build baseline discrepancy list using a single logic path.
+-- Returns an array of { id, name, ac, real, delta } for mismatches only.
+function CurrencyTracker:BuildBaselineDiscrepancies()
+    local results = {}
+    local ids = {}
+    if self.Storage and self.Storage.GetAvailableCurrencies then
+        ids = self.Storage:GetAvailableCurrencies() or {}
+    elseif self.DataManager and self.DataManager.GetAvailableCurrencies then
+        ids = self.DataManager:GetAvailableCurrencies() or {}
+    end
+
+    for _, cid in ipairs(ids) do
+        local data = self.Storage and self.Storage:GetCurrencyData(cid, "Total") or nil
+        local acNet = (data and data.net) or 0
+        local real = CT_GetRealCurrencyAmount(cid)
+        if real ~= nil then
+            local info = self.DataManager and self.DataManager:GetCurrencyInfo(cid) or nil
+            local name = (info and info.name) or ("Currency " .. tostring(cid))
+            if L and L[name] then name = L[name] end
+            if acNet ~= real then
+                table.insert(results, {
+                    id = cid,
+                    name = name,
+                    ac = acNet,
+                    real = real,
+                    delta = (real - acNet),
+                })
+            end
+        end
+    end
+    table.sort(results, function(a,b)
+        if a.name == b.name then return a.id < b.id end
+        return tostring(a.name) < tostring(b.name)
+    end)
+    return results
+end
+
+-- Preview baseline discrepancies: print only; no writes.
+function CurrencyTracker:RepairBaselinePreview()
+    local diffs = self:BuildBaselineDiscrepancies()
+    if #diffs == 0 then
+        print("Baseline preview: all totals match live values.")
+        return
+    end
+    print("=== Baseline Preview (Total vs Live) ===")
+    for _, d in ipairs(diffs) do
+        print(string.format("%s (id=%d): AC-CT amount=%d | Real amount=%d | Delta=%+d",
+            tostring(d.name), d.id, d.ac, d.real, d.delta))
+    end
+    print("=== End Preview ===")
+end
+
+-- Apply baseline corrections: reuse preview logic; write Total-only delta.
+function CurrencyTracker:RepairBaselineApply()
+    local diffs = self:BuildBaselineDiscrepancies()
+    if #diffs == 0 then
+        print("Baseline apply: nothing to change (all totals already match).")
+        return
+    end
+    print("=== Baseline Apply (Total-only adjustments) ===")
+    for _, d in ipairs(diffs) do
+        local ok = CT_ApplyTotalOnlyDelta(d.id, d.delta)
+        if ok then
+            print(string.format("Fixed %s (id=%d): AC-CT %d -> %d (applied %+d)",
+                tostring(d.name), d.id, d.ac, d.real, d.delta))
+        else
+            print(string.format("Failed to fix %s (id=%d)", tostring(d.name), d.id))
+        end
+    end
+    print("=== End Apply ===")
+end
+
 -- Utility function to check if the main addon version is compatible
 function CurrencyTracker:IsCompatibleVersion()
     -- This will be implemented when we integrate with the main addon
@@ -415,6 +534,10 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
     if cmd:find("^show%-all%-currencies") then
         local timeframe = select(1, CurrencyTracker:ParseShowCommand(cmd))
         CurrencyTracker:PrintMultipleCurrencies(timeframe)
+    elseif cmd:find("^show%-all") then
+        -- Alias for show-all-currencies; execute the exact same path
+        local timeframe = select(1, CurrencyTracker:ParseShowCommand(cmd))
+        CurrencyTracker:PrintMultipleCurrencies(timeframe)
     elseif cmd:find("^show") then
         CurrencyTracker:ShowCurrencyData(cmd)
     elseif cmd:find("^debug") then
@@ -450,6 +573,8 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
         -- /ct repair init
         -- /ct repair adjust <id> <delta> [source]
         -- /ct repair remove <id> <amount> <source> (income|outgoing)
+        -- /ct repair baseline preview
+        -- /ct repair baseline
         local sub = cmd:gsub("^repair%s*", "")
         sub = sub:gsub("^%s+", "")
         if sub == "init" then
@@ -467,10 +592,23 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
             CurrencyTracker:RepairAdjust(sub)
         elseif sub:find("^remove") then
             CurrencyTracker:RepairRemove(sub)
+        elseif sub:find("^baseline") then
+            local rest = sub:gsub("^baseline%s*", "")
+            rest = rest:gsub("^%s+", "")
+            if rest == "preview" then
+                CurrencyTracker:RepairBaselinePreview()
+            elseif rest == "" then
+                CurrencyTracker:RepairBaselineApply()
+            else
+                print("Usage: /ct repair baseline preview")
+                print("       /ct repair baseline")
+            end
         else
             print("Usage: /ct repair init")
             print("       /ct repair adjust <id> <delta> [source]")
             print("       /ct repair remove <id> <amount> <source> (income|outgoing)")
+            print("       /ct repair baseline preview")
+            print("       /ct repair baseline")
         end
     elseif cmd:find("^meta") then
         -- /ct meta show <timeframe> <id>
@@ -520,7 +658,7 @@ function CurrencyTracker:ParseShowCommand(command)
     end
 
     -- Remove leading verb tokens to normalize timeframe detection
-    if #parts > 0 and (parts[1] == "show" or parts[1] == "show-all-currencies" or parts[1] == "meta") then
+    if #parts > 0 and (parts[1] == "show" or parts[1] == "show-all-currencies" or parts[1] == "show-all" or parts[1] == "meta") then
         table.remove(parts, 1)
     end
 
@@ -673,8 +811,9 @@ function CurrencyTracker:PrintMultipleCurrencies(timeframe)
         local name = (info and info.name) or ("Currency " .. tostring(cid))
         if L and L[name] then name = L[name] end
         local net = (data and data.net) or 0
-        print(string.format("%s: Income %d | Outgoing %d | Net %s%d",
+        print(string.format("%s (id=%d): Income %d | Outgoing %d | Net %s%d",
             name,
+            cid,
             (data and data.income) or 0,
             (data and data.outgoing) or 0,
             (net >= 0 and "+" or ""),
@@ -706,6 +845,16 @@ function CurrencyTracker:ShowHelp()
     print("  /ct show-all-currencies this-year - Show all tracked currencies summary for this year")
     print("  /ct show-all-currencies prv-year - Show all tracked currencies summary for previous year")
     print("  /ct show-all-currencies total - Show all tracked currencies summary for total period")
+    print("  /ct show-all this-session - Alias of show-all-currencies for current session")
+    print("  /ct show-all today - Alias of show-all-currencies for today")
+    print("  /ct show-all prv-day - Alias of show-all-currencies for previous day")
+    print("  /ct show-all this-week - Alias of show-all-currencies for this week")
+    print("  /ct show-all prv-week - Alias of show-all-currencies for previous week")
+    print("  /ct show-all this-month - Alias of show-all-currencies for this month")
+    print("  /ct show-all prv-month - Alias of show-all-currencies for previous month")
+    print("  /ct show-all this-year - Alias of show-all-currencies for this year")
+    print("  /ct show-all prv-year - Alias of show-all-currencies for previous year")
+    print("  /ct show-all total - Alias of show-all-currencies for total period")
     print("  /ct debug on|off - Toggle in-game debug logging for currency events")
     print("  /ct status - Show system status")
     print("  /ct discover list - List dynamically discovered currencies")
@@ -714,5 +863,7 @@ function CurrencyTracker:ShowHelp()
     print("  /ct repair init - Reset currency tracker storage for this character (does not touch gold)")
     print("  /ct repair adjust <id> <delta> [source] - Apply a signed correction across aggregates")
     print("  /ct repair remove <id> <amount> <source> (income|outgoing) - Remove recorded amounts across aggregates")
+    print("  /ct repair baseline preview - Compare AC-CT Total with live amounts and list mismatches")
+    print("  /ct repair baseline - Apply Total-only corrections to match live amounts (same checks as preview)")
     print("  /ct meta show <timeframe> <id> - Inspect raw gain/lost source counts for a currency")
 end

@@ -24,6 +24,54 @@ local inCombat = false
 local primedCurrencies = {}
 local bagDebounceTimer = nil
 
+-- Helpers: baseline priming directly via SavedVariables without changing Storage API
+-- NOTE: We intentionally operate only on the Total period to avoid skewing time buckets.
+local function IsCurrencyTotalEmpty(currencyID)
+    if not currencyID then return false end
+    if not EnsureSavedVariablesStructure or not GetCurrentServerAndCharacter then return false end
+    if not EnsureSavedVariablesStructure() then return false end
+    local server, character = GetCurrentServerAndCharacter()
+    local sv = _G.Accountant_ClassicSaveData
+    if not (sv and sv[server] and sv[server][character]) then return true end
+    local charData = sv[server][character]
+    charData.currencyData = charData.currencyData or {}
+    if not charData.currencyData[currencyID] then return true end
+    local total = charData.currencyData[currencyID].Total or {}
+    for _, rec in pairs(total) do
+        if type(rec) == "table" then
+            local i = (rec.In or 0)
+            local o = (rec.Out or 0)
+            if i > 0 or o > 0 then return false end
+        end
+    end
+    return true
+end
+
+local function PrimeBaselineTotalOnly(currencyID, amount)
+    if not currencyID or not amount or amount <= 0 then return false end
+    if not EnsureSavedVariablesStructure or not GetCurrentServerAndCharacter then return false end
+    if not EnsureSavedVariablesStructure() then return false end
+    -- Ensure structures via Storage initializer if available
+    if CurrencyTracker.Storage and CurrencyTracker.Storage.InitializeCurrencyData then
+        CurrencyTracker.Storage:InitializeCurrencyData(currencyID)
+    end
+    local server, character = GetCurrentServerAndCharacter()
+    local sv = _G.Accountant_ClassicSaveData
+    if not (sv and sv[server] and sv[server][character]) then return false end
+    local charData = sv[server][character]
+    charData.currencyData = charData.currencyData or {}
+    charData.currencyData[currencyID] = charData.currencyData[currencyID] or {}
+    local bucket = charData.currencyData[currencyID]
+    bucket.Total = bucket.Total or {}
+    -- Use source key 0 for baseline/unknown
+    bucket.Total[0] = bucket.Total[0] or { In = 0, Out = 0 }
+    bucket.Total[0].In = (bucket.Total[0].In or 0) + amount
+    -- Touch lastUpdate if options table exists
+    charData.currencyOptions = charData.currencyOptions or {}
+    charData.currencyOptions.lastUpdate = time()
+    return true
+end
+
 -- Core interface implementation
 function EventHandler:Initialize()
     if isInitialized then
@@ -279,13 +327,26 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
         change = (newQuantity or 0) - old
     end
 
-    -- Baseline priming: if this currency has never been primed and we don't have an explicit quantityChange,
-    -- treat the first observation as baseline (no logging), then mark as primed.
-    if not primedCurrencies[currencyID] and quantityChange == nil then
-        lastCurrencyAmounts[currencyID] = newQuantity or 0
-        primedCurrencies[currencyID] = true
-        CurrencyTracker:LogDebug("Primed currency %s at %s (no transaction recorded)", tostring(currencyID), tostring(lastCurrencyAmounts[currencyID]))
-        return
+    -- Enhanced baseline priming on first sighting
+    if not primedCurrencies[currencyID] then
+        if quantityChange == nil then
+            -- Legacy path: no explicit change provided, just prime in-memory and skip logging
+            lastCurrencyAmounts[currencyID] = newQuantity or 0
+            primedCurrencies[currencyID] = true
+            CurrencyTracker:LogDebug("Primed currency %s at %s (no transaction recorded)", tostring(currencyID), tostring(lastCurrencyAmounts[currencyID]))
+            return
+        else
+            -- Modern path: first event comes with a change value; infer baseline and prime Total once if empty
+            local inferredBaseline = (newQuantity or 0) - (quantityChange or 0)
+            if inferredBaseline and inferredBaseline > 0 and IsCurrencyTotalEmpty(currencyID) then
+                if PrimeBaselineTotalOnly(currencyID, inferredBaseline) then
+                    CurrencyTracker:LogDebug("Primed Total baseline for id=%s amount=%s (inferred)", tostring(currencyID), tostring(inferredBaseline))
+                end
+            end
+            -- Update in-memory snapshot so subsequent diffs are correct; proceed to log this delta below
+            lastCurrencyAmounts[currencyID] = newQuantity or 0
+            primedCurrencies[currencyID] = true
+        end
     end
 
     if change ~= 0 then
@@ -357,6 +418,11 @@ function EventHandler:InitializeCurrencyAmounts()
             -- Prime baseline without recording a transaction
             lastCurrencyAmounts[currencyID] = currentAmount or 0
             primedCurrencies[currencyID] = true
+            -- If storage has no Total data yet and the live amount is positive, prime Total once
+            if (currentAmount or 0) > 0 and IsCurrencyTotalEmpty(currencyID) then
+                PrimeBaselineTotalOnly(currencyID, currentAmount)
+                CurrencyTracker:LogDebug("Primed Total baseline at login for id=%s amount=%s", tostring(currencyID), tostring(currentAmount))
+            end
         end
     end
 end
