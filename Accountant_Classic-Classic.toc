@@ -37,7 +37,7 @@
 #@end-debug@
 ## Author: kamusis
 ## X-Original-Author: arith
-## Version: v2.20.00
+## Version: v3.00.00
 ## OptionalDeps: LibStub, CallbackHandler-1.0, Ace3, LibDBIcon-1.0, LibDialog-1.0, !LibUIDropDownMenu
 ## SavedVariables: Accountant_ClassicSaveData, Accountant_ClassicDB, Accountant_Classic_NewDB, Accountant_ClassicZoneDB
 ## X-Credits: Sabaki, Shadow, Rophy

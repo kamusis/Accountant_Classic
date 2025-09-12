@@ -1,10 +1,17 @@
-﻿$Id: Revision.txt 415 2024-01-30 13:08:54Z arithmandar $
+$Id: Revision.txt 415 2024-01-30 13:08:54Z arithmandar $
 Known Issue(s):
 ===============
 - Some incomes were categorized into Unknown instead of corresponding group.
 
 Revision History:
 =================
+* v3.00.00 (Sep. 12, 2025)
+==========================
+- New headless Currency Tracker: event-driven via CURRENCY_DISPLAY_UPDATE with BAG_UPDATE fallback.
+- Added /ct commands for viewing data and maintenance (e.g., /ct repair init; logging toggle).
+- Preserves existing data model and backward compatibility; gold tracker unchanged.
+- Storage metadata, retention cleanup, and best-effort legacy source attribution.
+
 * v2.20.00 (Sep. 10, 2025)
 ==========================
 - Retail ToC updated to support WoW 11.2.0 (Interface 110200)

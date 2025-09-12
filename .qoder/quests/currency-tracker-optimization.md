@@ -871,6 +871,38 @@ Insertion points
 Test plan
 - Trigger legacy-only deltas (no full currency event) and verify metadata/log entries include activity/zone while aggregates continue to use `sourceKey=0`.
 
+### TODO: Locale tokens and translations (sources and currency names)
+
+Scope
+- Modules: `CurrencyTracker/CurrencyConstants.lua`, `Locale/localization.*.lua`, `CurrencyTracker/CurrencyCore.lua`, `CurrencyTracker/CurrencyDataManager.lua`
+
+Design
+- Source tokens
+  - Maintain a numeric-code → token map in `CurrencyConstants.lua`:
+    - `SourceCodeTokens[9] = "CONTAINER_REWARD"`
+    - `SourceCodeTokens[17] = "MAIL_REWARD"`
+    - `SourceCodeTokens[52] = "VENDOR_PURCHASE"`
+  - At display time, resolve code via `CurrencyTracker.SourceCodeTokens[math.abs(code)]`.
+  - Translate token via `L[token]` with fallbacks to the raw token and finally `S:<code>`.
+- Currency names
+  - Prefer localized names from `C_CurrencyInfo.GetCurrencyInfo(currencyID).name` when available.
+  - Fallback tokens for known IDs can be defined in `CurrencyConstants.lua` (e.g., `CurrencyNameTokens[id] = "VALORSTONES"`) and translated via Locale if the API is unavailable.
+
+Localization files
+- Add to each `Locale/localization.*.lua`:
+  - `L["CONTAINER_REWARD"] = "..."`
+  - `L["MAIL_REWARD"] = "..."`
+  - `L["VENDOR_PURCHASE"] = "..."`
+  - Optional currency name tokens if needed.
+
+Insertion points
+- `CurrencyCore:PrintCurrencyData()` and `PrintMultipleCurrencies()` should resolve source labels using numeric code → token → `L[token]` and currency names via API or tokens.
+
+Test plan
+- Switch client locale and verify:
+  - Source names show translations for CONTAINER_REWARD/MAIL_REWARD/VENDOR_PURCHASE.
+  - Currency names display localized names (API) or localized tokens (fallback) without breaking unknown cases.
+
 Test plan
 - Retail
   - Trigger a single currency gain and confirm one record.
