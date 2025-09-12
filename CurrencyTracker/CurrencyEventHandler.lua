@@ -54,8 +54,10 @@ function EventHandler:Enable()
     -- Register for events
     self:RegisterEvents()
 
-    -- Unconditional confirmation for troubleshooting
-    print("[AC CT] EventHandler enabled (events registered)")
+    -- Debug-only confirmation
+    if CurrencyTracker and CurrencyTracker.DEBUG_MODE then
+        print("[AC CT] EventHandler enabled (events registered)")
+    end
 
     isEnabled = true
     return true
@@ -93,8 +95,10 @@ function EventHandler:RegisterEvents()
         "PLAYER_REGEN_ENABLED",  -- Leaving combat
     }
 
-    -- Early unconditional marker to verify this function is reached
-    print(string.format("[AC CT] RegisterEvents begin (eventFrame=%s, C_CurrencyInfo=%s)", tostring(eventFrame and eventFrame:GetName() or "nil"), tostring(not not C_CurrencyInfo)))
+    -- Debug-only marker to verify this function is reached
+    if CurrencyTracker and CurrencyTracker.DEBUG_MODE then
+        print(string.format("[AC CT] RegisterEvents begin (eventFrame=%s, C_CurrencyInfo=%s)", tostring(eventFrame and eventFrame:GetName() or "nil"), tostring(not not C_CurrencyInfo)))
+    end
 
     -- Register modern currency events if available
     if C_CurrencyInfo then
@@ -113,8 +117,7 @@ function EventHandler:RegisterEvents()
         eventFrame:RegisterEvent(event)
         registeredEvents[event] = true
         CurrencyTracker:LogDebug("Registered event: %s", event)
-        if event == "CURRENCY_DISPLAY_UPDATE" then
-            -- Unconditional print to confirm registration in live chat
+        if event == "CURRENCY_DISPLAY_UPDATE" and CurrencyTracker and CurrencyTracker.DEBUG_MODE then
             print("[AC CT] Registered CURRENCY_DISPLAY_UPDATE")
         end
     end
@@ -140,8 +143,8 @@ end
 function EventHandler:OnEvent(event, ...)
     local arg1, arg2 = ...
 
-    -- Unconditional print to confirm dispatch of currency events
-    if event == "CURRENCY_DISPLAY_UPDATE" then
+    -- Debug-only dispatch confirmation
+    if event == "CURRENCY_DISPLAY_UPDATE" and CurrencyTracker and CurrencyTracker.DEBUG_MODE then
         print("[AC CT] OnEvent: CURRENCY_DISPLAY_UPDATE")
     end
 

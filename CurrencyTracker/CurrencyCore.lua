@@ -231,9 +231,11 @@ end
     if success then
         isInitialized = true
         print("CurrencyTracker: Module initialized successfully")
-        -- Diagnostics: report submodule presence and methods
-        print(string.format("[AC CT] Core.Init: EventHandler=%s Init=%s Enable=%s",
-            tostring(self.EventHandler), tostring(self.EventHandler and self.EventHandler.Initialize), tostring(self.EventHandler and self.EventHandler.Enable)))
+        -- Diagnostics (debug only)
+        if CurrencyTracker and CurrencyTracker.DEBUG_MODE then
+            print(string.format("[AC CT] Core.Init: EventHandler=%s Init=%s Enable=%s",
+                tostring(self.EventHandler), tostring(self.EventHandler and self.EventHandler.Initialize), tostring(self.EventHandler and self.EventHandler.Enable)))
+        end
     else
         print("CurrencyTracker: Module initialization failed")
     end
@@ -255,16 +257,22 @@ function CurrencyTracker:Enable()
     -- Enable sub-modules
     local success = true
     
-    -- Diagnostics before enabling EventHandler
-    print(string.format("[AC CT] Core.Enable: about to enable EventHandler (exists=%s, hasEnable=%s)",
-        tostring(self.EventHandler ~= nil), tostring(self.EventHandler and (type(self.EventHandler.Enable) == "function"))))
+    -- Diagnostics before enabling EventHandler (debug only)
+    if CurrencyTracker and CurrencyTracker.DEBUG_MODE then
+        print(string.format("[AC CT] Core.Enable: about to enable EventHandler (exists=%s, hasEnable=%s)",
+            tostring(self.EventHandler ~= nil), tostring(self.EventHandler and (type(self.EventHandler.Enable) == "function"))))
+    end
 
     if self.EventHandler and self.EventHandler.Enable then
         local ok = self.EventHandler:Enable()
         success = success and ok
-        print(string.format("[AC CT] Core.Enable: EventHandler:Enable() returned %s", tostring(ok)))
+        if CurrencyTracker and CurrencyTracker.DEBUG_MODE then
+            print(string.format("[AC CT] Core.Enable: EventHandler:Enable() returned %s", tostring(ok)))
+        end
     else
-        print("[AC CT] Core.Enable: EventHandler missing or no Enable()")
+        if CurrencyTracker and CurrencyTracker.DEBUG_MODE then
+            print("[AC CT] Core.Enable: EventHandler missing or no Enable()")
+        end
     end
     
     -- Headless mode: do not enable UI or display integration
