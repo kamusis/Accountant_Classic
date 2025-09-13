@@ -63,9 +63,9 @@ local function PrimeBaselineTotalOnly(currencyID, amount)
     charData.currencyData[currencyID] = charData.currencyData[currencyID] or {}
     local bucket = charData.currencyData[currencyID]
     bucket.Total = bucket.Total or {}
-    -- Use source key 0 for baseline/unknown
-    bucket.Total[0] = bucket.Total[0] or { In = 0, Out = 0 }
-    bucket.Total[0].In = (bucket.Total[0].In or 0) + amount
+    -- Use a string key for baseline priming to avoid colliding with Enum 0 (ConvertOldItem)
+    bucket.Total["BaselinePrime"] = bucket.Total["BaselinePrime"] or { In = 0, Out = 0 }
+    bucket.Total["BaselinePrime"].In = (bucket.Total["BaselinePrime"].In or 0) + amount
     -- Touch lastUpdate if options table exists
     charData.currencyOptions = charData.currencyOptions or {}
     charData.currencyOptions.lastUpdate = time()
@@ -270,8 +270,14 @@ function EventHandler:OnCurrencyDisplayUpdate(currencyType, quantity, quantityCh
         print("[AC CT][Event] CURRENCY_DISPLAY_UPDATE received")
         print(string.format("  Args(raw): %s | %s | %s | %s | %s",
             tostring(raw1), tostring(raw2), tostring(raw3), tostring(raw4), tostring(raw5)))
-        print(string.format("  Args(norm): id=%s new=%s chg=%s gain=%s lost=%s",
-            tostring(currencyType), tostring(quantity), tostring(quantityChange), tostring(quantityGainSource), tostring(quantityLostSource)))
+        -- 11.0.2: quantityLostSource renamed to destroyReason. Keep dual-label for clarity in debug.
+        local is1102 = CurrencyTracker and CurrencyTracker.Constants and CurrencyTracker.Constants.VersionUtils
+            and CurrencyTracker.Constants.VersionUtils.IsVersionSupported
+            and CurrencyTracker.Constants.VersionUtils.IsVersionSupported("11.0.2")
+        local lossLabel = is1102 and "destroyReason" or "lostSource"
+        local norm = string.format("  Args(norm): id=%s new=%s chg=%s gain=%s %s=%s",
+            tostring(currencyType), tostring(quantity), tostring(quantityChange), tostring(quantityGainSource), lossLabel, tostring(quantityLostSource))
+        print(norm)
     end
 
     if inCombat then
@@ -327,6 +333,20 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
         change = (newQuantity or 0) - old
     end
 
+    -- Sign-correction guard:
+    -- On pre-11.0.2 clients, quantityChange could be absolute (always positive).
+    -- Use the authoritative direction from (new - old) when both are available and magnitudes match but sign differs.
+    if quantityChange ~= nil and newQuantity ~= nil then
+        local diff = (newQuantity or 0) - old
+        if diff ~= 0 and math.abs(diff) == math.abs(change) then
+            local changePos = change > 0
+            local diffPos = diff > 0
+            if changePos ~= diffPos then
+                change = diff
+            end
+        end
+    end
+
     -- Enhanced baseline priming on first sighting
     if not primedCurrencies[currencyID] then
         if quantityChange == nil then
@@ -357,10 +377,10 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
         elseif change < 0 and quantityLostSource then
             sourceKey = -tonumber(quantityLostSource)
         else
-            sourceKey = 0 -- Unknown
+            sourceKey = "Unknown" -- Unknown
         end
 
-        -- Record raw event metadata (both gain and lost sources) for analysis
+        -- Record raw event metadata (both gain and lost/destroy sources) for analysis
         if CurrencyTracker.Storage and CurrencyTracker.Storage.RecordEventMetadata then
             local sign = (change > 0) and 1 or -1
             CurrencyTracker.Storage:RecordEventMetadata(currencyID, quantityGainSource, quantityLostSource, sign)
@@ -380,9 +400,14 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
             local rawGain = (quantityGainSource ~= nil) and tostring(quantityGainSource) or "nil"
             local rawLost = (quantityLostSource ~= nil) and tostring(quantityLostSource) or "nil"
 
+            local is1102 = CurrencyTracker and CurrencyTracker.Constants and CurrencyTracker.Constants.VersionUtils
+                and CurrencyTracker.Constants.VersionUtils.IsVersionSupported
+                and CurrencyTracker.Constants.VersionUtils.IsVersionSupported("11.0.2")
+            local lossLabel = is1102 and "destroyReason" or "lostSrc"
+
             print("[AC CT][Event]")
-            print(string.format("  Raw: id=%s new=%s chg=%s gainSrc=%s lostSrc=%s",
-                tostring(currencyID), rawNew, rawChg, rawGain, rawLost))
+            print(string.format("  Raw: id=%s new=%s chg=%s gainSrc=%s %s=%s",
+                tostring(currencyID), rawNew, rawChg, rawGain, lossLabel, rawLost))
             print(string.format("  Calc: old=%s delta=%s srcKey=%s",
                 tostring(old), tostring(change), tostring(sourceKey)))
             print(string.format("  Save: path=currencyData[%s][Session|Day|Week|Month|Year|Total][%s] In+=%d Out+=%d",
@@ -399,8 +424,14 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
         -- Mark as primed after first processed change
         primedCurrencies[currencyID] = true
         
-        CurrencyTracker:LogDebug("CURRENCY_DISPLAY_UPDATE id=%d new=%s chg=%s gainSrc=%s lostSrc=%s srcKey=%s",
-            currencyID, tostring(newQuantity), tostring(change), tostring(quantityGainSource), tostring(quantityLostSource), tostring(sourceKey))
+        do
+            local is1102 = CurrencyTracker and CurrencyTracker.Constants and CurrencyTracker.Constants.VersionUtils
+                and CurrencyTracker.Constants.VersionUtils.IsVersionSupported
+                and CurrencyTracker.Constants.VersionUtils.IsVersionSupported("11.0.2")
+            local lossLabel = is1102 and "destroyReason" or "lostSrc"
+            CurrencyTracker:LogDebug("CURRENCY_DISPLAY_UPDATE id=%d new=%s chg=%s gainSrc=%s %s=%s srcKey=%s",
+                currencyID, tostring(newQuantity), tostring(change), tostring(quantityGainSource), lossLabel, tostring(quantityLostSource), tostring(sourceKey))
+        end
     end
 end
 

@@ -213,3 +213,18 @@ L["ConvertItemsToCurrencyAndReputation"] = "Convert Items to Currency and Reputa
 L["PhBuffer_63"] = "Placeholder 63"
 L["SpellSkipLinkedCurrency"] = "Spell Skip Linked Currency"
 L["AccountTransfer"] = "Account Transfer"
+
+-- Currency Tracker - Destroy reason labels (Enum.CurrencyDestroyReason)
+-- These keys complement Source tokens for loss-side reasons introduced in WoW 11.0.2.
+-- Only add keys that are not already defined above.
+L["VersionUpdate"] = "Version Update"
+L["QuestTurnin"] = "Quest Turn-in"
+L["Capped"] = "Capped"
+L["Garrison"] = "Garrison"
+L["DroppedToCorpse"] = "Dropped To Corpse"
+L["FulfillCraftingOrder"] = "Fulfill Crafting Order"
+L["ConcentrationCast"] = "Concentration Cast"
+
+-- Currency Tracker - Custom internal source labels
+-- Friendly names for string keys used by the headless Currency Tracker.
+L["BaselinePrime"] = "Baseline (Initial Balance)"

@@ -409,6 +409,27 @@ CurrencyTracker.SourceCodeTokens = CurrencyTracker.SourceCodeTokens or {
     [65] = "AccountTransfer",
 }
 
+-- Destroy reason tokens map (loss side)
+-- Official names mirrored from Enum.CurrencyDestroyReason (WoW 11.0.2+)
+-- Keys are absolute enum values; direction is represented by sign at usage site (negative for loss)
+CurrencyTracker.DestroyReasonTokens = CurrencyTracker.DestroyReasonTokens or {
+    [0]  = "Cheat",
+    [1]  = "Spell",
+    [2]  = "VersionUpdate",
+    [3]  = "QuestTurnin",
+    [4]  = "Vendor",
+    [5]  = "Trade",
+    [6]  = "Capped",
+    [7]  = "Garrison",
+    [8]  = "DroppedToCorpse",
+    [9]  = "BonusRoll",
+    [10] = "FactionConversion",
+    [11] = "FulfillCraftingOrder",
+    [12] = "Script",
+    [13] = "ConcentrationCast",
+    [14] = "AccountTransfer",
+}
+
 -- Also export to addon table and global if available
 if addonTable then
     addonTable.CurrencyConstants = CurrencyConstants

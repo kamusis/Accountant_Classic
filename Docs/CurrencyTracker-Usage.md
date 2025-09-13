@@ -83,7 +83,7 @@ Notes:
 
 ## /ct meta show
 
-Inspect raw metadata captured from events (for research/diagnostics). Shows occurrence counts of raw gain and lost source codes, plus the last snapshot.
+Inspect raw metadata captured from events (for research/diagnostics). Shows occurrence counts of raw gain and lost/destroy source codes, plus the last snapshot.
 
 Syntax:
 
@@ -101,7 +101,8 @@ Examples:
 Notes:
 
 - Metadata does not affect aggregates; it records raw source fields for analysis.
-- "Gain" counts are occurrences of `quantityGainSource`; "Lost" counts are occurrences of `quantityLostSource`.
+- "Gain" counts are occurrences of `quantityGainSource`.
+- "Lost/Destroy" counts are occurrences of the negative-direction source field. On WoW 11.0.2+, this field is named `destroyReason` (previously `quantityLostSource`). We continue to store it under the `lost` bucket for backward compatibility.
 
 ---
 
@@ -237,3 +238,6 @@ Notes:
 - Source codes are stored as signed numeric keys. Positive values represent gain codes; negative values represent spend codes.
 - Human-readable labels for sources are resolved at display-time using token maps and Locale translations. Unknown sources fall back to `S:<code>`.
 - Rollover (Day/Week/Month/Year → previous) happens during initialization/login to keep time buckets current.
+ - WoW 11.0.2 changes:
+   - `quantityChange` can be negative when spending/losing a currency. The tracker handles signed values and also auto-corrects direction on older clients when needed.
+   - The loss-side field was renamed from `quantityLostSource` to `destroyReason`. The tracker shows "Destroy/Lost sources" on modern clients, while internally keeping the SavedVariables schema unchanged (`lost` bucket).

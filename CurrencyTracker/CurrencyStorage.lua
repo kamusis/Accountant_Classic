@@ -34,6 +34,69 @@ local function SafeLogDebug(fmt, ...)
     end
 end
 
+-- Migrate numeric source key 0 to string key "BaselinePrime" across all timeframes.
+-- This is a cosmetic repair to avoid showing "ConvertOldItem" for unknown/baseline rows.
+-- Returns a summary table: { currencies = n, periods = n, entries = n, inMoved = x, outMoved = y }
+function Storage:MigrateZeroSourceToBaselinePrime()
+    -- Ensure SavedVariables exists and basic structure is present
+    if not EnsureSavedVariablesStructure() then
+        return { currencies = 0, periods = 0, entries = 0, inMoved = 0, outMoved = 0 }
+    end
+
+    local server, character = GetCurrentServerAndCharacter()
+    local sv = _G.Accountant_ClassicSaveData
+    local charData = sv[server][character]
+    charData.currencyData = charData.currencyData or {}
+
+    local summary = { currencies = 0, periods = 0, entries = 0, inMoved = 0, outMoved = 0 }
+
+    -- Consider all known periods, including previous buckets used by shifting logic
+    local PERIODS = {
+        "Session", "Day", "Week", "Month", "Year", "Total",
+        "PrvDay", "PrvWeek", "PrvMonth", "PrvYear",
+    }
+
+    for currencyID, periods in pairs(charData.currencyData) do
+        local currencyTouched = false
+        for _, period in ipairs(PERIODS) do
+            local bucket = periods[period]
+            if type(bucket) == "table" and bucket[0] then
+                local rec = bucket[0]
+                local movedIn = (rec.In or 0)
+                local movedOut = (rec.Out or 0)
+                if (movedIn > 0) or (movedOut > 0) then
+                    bucket["BaselinePrime"] = bucket["BaselinePrime"] or { In = 0, Out = 0 }
+                    bucket["BaselinePrime"].In = (bucket["BaselinePrime"].In or 0) + movedIn
+                    bucket["BaselinePrime"].Out = (bucket["BaselinePrime"].Out or 0) + movedOut
+                    summary.inMoved = summary.inMoved + movedIn
+                    summary.outMoved = summary.outMoved + movedOut
+                    summary.entries = summary.entries + 1
+                    currencyTouched = true
+                else
+                    -- Zero entry: just drop it
+                end
+                -- Remove the numeric key regardless once merged
+                bucket[0] = nil
+                summary.periods = summary.periods + 1
+            end
+        end
+        if currencyTouched then
+            summary.currencies = summary.currencies + 1
+        end
+    end
+
+    -- Touch lastUpdate to mark maintenance
+    charData.currencyOptions = charData.currencyOptions or {}
+    charData.currencyOptions.lastUpdate = time()
+
+    SafeLogDebug("MigrateZeroSourceToBaselinePrime completed: currencies=%d periods=%d entries=%d inMoved=%d outMoved=%d",
+        summary.currencies, summary.periods, summary.entries, summary.inMoved, summary.outMoved)
+
+    return summary
+end
+
+
+
 -- Remove previously recorded income/outgoing across aggregates for a currency and source.
 -- kind: "income" or "outgoing" (case-insensitive). Amount must be positive.
 -- Clamps at 0 without going negative. Adjusts periods: Session, Day, Week, Month, Year, Total.
@@ -58,7 +121,7 @@ function Storage:RepairRemove(currencyID, amount, sourceKey, kind)
 
     local periods = { "Session", "Day", "Week", "Month", "Year", "Total" }
     local source = sourceKey
-    if source == nil then source = 0 end
+    if source == nil then source = "Unknown" end
 
     local removedTotal = 0
     for _, period in ipairs(periods) do
@@ -126,7 +189,7 @@ function Storage:AdjustCurrencyAggregates(currencyID, delta, sourceKey)
 
     local periods = { "Session", "Day", "Week", "Month", "Year", "Total" }
     local source = sourceKey
-    if source == nil then source = 0 end
+    if source == nil then source = "Unknown" end
 
     for _, period in ipairs(periods) do
         currencyData[period] = currencyData[period] or {}
@@ -754,6 +817,13 @@ end
 -- Record raw event metadata for analysis/diagnostics: counts of gain/lost sources
 -- and the last-seen snapshot. Minimal write path that is safe during early init.
 -- sign: +1 for gain, -1 for loss, used only for the 'last' snapshot (counters use absolute source ids)
+--
+-- NOTE (WoW 11.0.2+): The fifth event argument formerly known as `quantityLostSource`
+-- was renamed by Blizzard to `destroyReason`. To maintain backward compatibility
+-- and avoid SavedVariables migrations, we intentionally continue to persist this
+-- negative-direction source under the existing `lost` bucket (node.lost[...] and
+-- node.last.lost). Display layers may choose to label it as "Destroy/Lost" on
+-- modern clients, but storage shape remains unchanged.
 function Storage:RecordEventMetadata(currencyID, quantityGainSource, quantityLostSource, sign)
     if not currencyID then return false end
     if not EnsureSavedVariablesStructure() then return false end

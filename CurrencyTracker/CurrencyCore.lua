@@ -3,6 +3,21 @@
 -- Manages module lifecycle and coordinates between sub-components
 
 local addonName, addonTable = ...
+-- Bind localization table for display labels
+local L = LibStub and LibStub("AceLocale-3.0", true) and LibStub("AceLocale-3.0"):GetLocale("Accountant_Classic", true) or nil
+
+-- Lazy resolver for localization table to handle load-order differences
+local function CT_GetL()
+    if L then return L end
+    if LibStub then
+        local ace = LibStub("AceLocale-3.0", true)
+        if ace then
+            local LL = ace:GetLocale("Accountant_Classic", true)
+            if LL then L = LL end
+        end
+    end
+    return L
+end
 
 -- Create the main CurrencyTracker namespace
 CurrencyTracker = CurrencyTracker or {}
@@ -49,6 +64,11 @@ function CurrencyTracker:MetaShow(sub)
     local gain = node.gain or {}
     local lost = node.lost or {}
     print(string.format("=== Meta Sources - %s (%d) ===", tf, id))
+    -- 11.0.2: quantityLostSource renamed to destroyReason. We keep storing under 'lost'
+    -- for backward compatibility, but adjust the displayed label on modern clients.
+    local is1102 = CurrencyTracker and CurrencyTracker.Constants and CurrencyTracker.Constants.VersionUtils
+        and CurrencyTracker.Constants.VersionUtils.IsVersionSupported
+        and CurrencyTracker.Constants.VersionUtils.IsVersionSupported("11.0.2")
     local function sortedKeys(t)
         local keys = {}
         for k in pairs(t) do table.insert(keys, k) end
@@ -61,16 +81,30 @@ function CurrencyTracker:MetaShow(sub)
         print("  <none>")
     else
         for _, k in ipairs(gk) do
-            print(string.format("  %s: %d", tostring(k), gain[k] or 0))
+            local label = tostring(k)
+            local token = CurrencyTracker.SourceCodeTokens and CurrencyTracker.SourceCodeTokens[tonumber(k)]
+            if token then
+                label = (L and L[token]) or token
+            else
+                label = "S:" .. tostring(k)
+            end
+            print(string.format("  %s: %d", label, gain[k] or 0))
         end
     end
     local lk = sortedKeys(lost)
-    print("Lost sources:")
+    print(is1102 and "Destroy/Lost sources:" or "Lost sources:")
     if #lk == 0 then
         print("  <none>")
     else
         for _, k in ipairs(lk) do
-            print(string.format("  %s: %d", tostring(k), lost[k] or 0))
+            local label = tostring(k)
+            local token = CurrencyTracker.DestroyReasonTokens and CurrencyTracker.DestroyReasonTokens[tonumber(k)]
+            if token then
+                label = (L and L[token]) or token
+            else
+                label = "S:" .. tostring(k)
+            end
+            print(string.format("  %s: %d", label, lost[k] or 0))
         end
     end
     if node.last then
@@ -372,11 +406,11 @@ local function CT_ApplyTotalOnlyDelta(currencyID, delta)
     charData.currencyData[currencyID] = charData.currencyData[currencyID] or {}
     local bucket = charData.currencyData[currencyID]
     bucket.Total = bucket.Total or {}
-    bucket.Total[0] = bucket.Total[0] or { In = 0, Out = 0 }
+    bucket.Total["BaselinePrime"] = bucket.Total["BaselinePrime"] or { In = 0, Out = 0 }
     if delta > 0 then
-        bucket.Total[0].In = (bucket.Total[0].In or 0) + delta
+        bucket.Total["BaselinePrime"].In = (bucket.Total["BaselinePrime"].In or 0) + delta
     else
-        bucket.Total[0].Out = (bucket.Total[0].Out or 0) + (-delta)
+        bucket.Total["BaselinePrime"].Out = (bucket.Total["BaselinePrime"].Out or 0) + (-delta)
     end
     charData.currencyOptions = charData.currencyOptions or {}
     charData.currencyOptions.lastUpdate = time()
@@ -584,6 +618,14 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
             else
                 print("CurrencyTracker: storage reset helper unavailable")
             end
+        elseif sub == "migrate-zero" or sub == "migrate" then
+            if CurrencyTracker.Storage and CurrencyTracker.Storage.MigrateZeroSourceToBaselinePrime then
+                local summary = CurrencyTracker.Storage:MigrateZeroSourceToBaselinePrime()
+                print(string.format("[AC CT] Repair migrate-zero: currencies=%d periods=%d entries=%d moved +%d | -%d",
+                    tonumber(summary.currencies or 0), tonumber(summary.periods or 0), tonumber(summary.entries or 0), tonumber(summary.inMoved or 0), tonumber(summary.outMoved or 0)))
+            else
+                print("CurrencyTracker: migrate-zero helper unavailable")
+            end
         elseif sub:find("^adjust") then
             CurrencyTracker:RepairAdjust(sub)
         elseif sub:find("^remove") then
@@ -601,6 +643,7 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
             end
         else
             print("Usage: /ct repair init")
+            print("       /ct repair migrate-zero   -- Move numeric source 0 to 'BaselinePrime' across all timeframes")
             print("       /ct repair adjust <id> <delta> [source]")
             print("       /ct repair remove <id> <amount> <source> (income|outgoing)")
             print("       /ct repair baseline preview")
@@ -736,7 +779,7 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
         currencyName = L[currencyName]
     end
 
-    print(string.format("=== %s - %s ===", currencyName, tostring(timeframe)))
+    print(string.format("=== %s (id: %s) - %s ===", currencyName, tostring(currencyID), tostring(timeframe)))
     print(string.format("Total Income: %d", (data and data.income) or 0))
     print(string.format("Total Outgoing: %d", (data and data.outgoing) or 0))
     print(string.format("Net Change: %d", (data and data.net) or 0))
@@ -752,12 +795,23 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
             local sourceLabel = tostring(source)
             if type(source) == "number" then
                 local code = source
-                local token = CurrencyTracker.SourceCodeTokens and CurrencyTracker.SourceCodeTokens[math.abs(code)]
+                local token
+                if code >= 0 then
+                    token = CurrencyTracker.SourceCodeTokens and CurrencyTracker.SourceCodeTokens[code]
+                else
+                    local absCode = -code
+                    token = CurrencyTracker.DestroyReasonTokens and CurrencyTracker.DestroyReasonTokens[absCode]
+                end
                 if token then
                     sourceLabel = (L and L[token]) or token
                 else
                     sourceLabel = "S:" .. tostring(code)
                 end
+            end
+
+            -- Localize string labels for custom keys (e.g., "BaselinePrime", "Unknown")
+            if type(sourceLabel) == "string" and L and L[sourceLabel] then
+                sourceLabel = L[sourceLabel]
             end
 
             print(string.format("  %s: +%d | -%d (net: %s%d)",
@@ -774,6 +828,25 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
             local outgoing = transaction.outgoing or 0
             local net = income - outgoing
             local label = tostring(transaction.source)
+            if type(transaction.source) == "number" then
+                local code = transaction.source
+                local token
+                if code >= 0 then
+                    token = CurrencyTracker.SourceCodeTokens and CurrencyTracker.SourceCodeTokens[code]
+                else
+                    local absCode = -code
+                    token = CurrencyTracker.DestroyReasonTokens and CurrencyTracker.DestroyReasonTokens[absCode]
+                end
+                if token then
+                    label = (L and L[token]) or token
+                else
+                    label = "S:" .. tostring(code)
+                end
+            end
+            -- Localize string labels for custom keys (e.g., "BaselinePrime", "Unknown")
+            if type(label) == "string" and L and L[label] then
+                label = L[label]
+            end
             print(string.format("  %s: +%d | -%d (net: %s%d)",
                 label,
                 income,
@@ -870,6 +943,7 @@ function CurrencyTracker:ShowHelp()
     print("  /ct discover track <id> [on|off] - Track or untrack a discovered currency")
     print("  /ct discover clear - Clear discovered currencies")
     print("  /ct repair init - Reset currency tracker storage for this character (does not touch gold)")
+    print("  /ct repair migrate-zero - Move numeric source 0 into 'BaselinePrime' across all timeframes (cosmetic)")
     print("  /ct repair adjust <id> <delta> [source] - Apply a signed correction across aggregates")
     print("  /ct repair remove <id> <amount> <source> (income|outgoing) - Remove recorded amounts across aggregates")
     print("  /ct repair baseline preview - Compare AC-CT Total with live amounts and list mismatches")

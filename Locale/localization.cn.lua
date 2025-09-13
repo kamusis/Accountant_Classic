@@ -206,3 +206,17 @@ L["ConvertItemsToCurrencyAndReputation"] = "将物品转换为货币和声望"
 L["PhBuffer_63"] = "占位符 63"
 L["SpellSkipLinkedCurrency"] = "法术跳过关联货币"
 L["AccountTransfer"] = "账号转移"
+
+-- 货币追踪器 - 销毁原因标签（Enum.CurrencyDestroyReason，WoW 11.0.2+）
+-- 仅补充尚未定义的键，键名与代码中的 Token 保持一致（CamelCase）。
+L["VersionUpdate"] = "版本更新"
+L["QuestTurnin"] = "任务交付"
+L["Capped"] = "达到上限"
+L["Garrison"] = "要塞"
+L["DroppedToCorpse"] = "掉落到尸体"
+L["FulfillCraftingOrder"] = "专业订单（材料/货币支出）"
+L["ConcentrationCast"] = "专注施法"
+
+-- 货币追踪器 - 自定义内部来源标签
+-- 为字符串键提供友好名称（仅供货币追踪器使用）。
+L["BaselinePrime"] = "基线补写（初始余额）"
