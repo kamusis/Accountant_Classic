@@ -357,10 +357,59 @@ function Storage:InitializeCurrencyStorage()
         SafeLogDebug("Initialized currencyOptions for %s-%s", server, character)
     end
 
-    -- Add currencyDiscovery table if it doesn't exist (for dynamic discovery)
-    if not charData.currencyDiscovery then
-        charData.currencyDiscovery = {}
-        SafeLogDebug("Initialized currencyDiscovery for %s-%s", server, character)
+    -- Ensure account-wide global discovery structure exists (renamed to Accountant_Classic_CurrencyDB)
+    _G.Accountant_Classic_CurrencyDB = _G.Accountant_Classic_CurrencyDB or {}
+    _G.Accountant_Classic_CurrencyDB.currencyDiscovery = _G.Accountant_Classic_CurrencyDB.currencyDiscovery or {}
+    local globalDiscovery = _G.Accountant_Classic_CurrencyDB.currencyDiscovery
+
+
+    -- Backward-compat migration: per-character discovery -> global (one-time per character)
+    if charData.currencyDiscovery and type(charData.currencyDiscovery) == "table" and not charData._currencyDiscoveryMigrated then
+        local migrated = 0
+        for id, meta in pairs(charData.currencyDiscovery) do
+            if id ~= nil then
+                globalDiscovery[id] = globalDiscovery[id] or {}
+                -- Shallow merge to preserve any existing global flags
+                local g = globalDiscovery[id]
+                g.id = g.id or meta.id or id
+                g.name = g.name or meta.name
+                g.icon = g.icon or meta.icon
+                g.expansion = g.expansion or meta.expansion
+                g.expansionName = g.expansionName or meta.expansionName
+                g.patch = g.patch or meta.patch
+                g.category = g.category or meta.category
+                if g.tracked == nil and meta.tracked ~= nil then
+                    g.tracked = meta.tracked
+                end
+                migrated = migrated + 1
+            end
+        end
+        -- Mark this character as migrated to avoid repeated merges
+        charData._currencyDiscoveryMigrated = true
+        if migrated > 0 then
+            SafeLogDebug("Migrated %d discovered currencies from %s-%s to global", migrated, server, character)
+            local msg = string.format("[AC CT] Migrated %d discovered currencies from %s-%s to shared database (Accountant_Classic_CurrencyDB).", migrated, tostring(server), tostring(character))
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage(msg, 0.2, 1.0, 0.2)
+            else
+                print(msg)
+            end
+            -- Safety: remove legacy per-character table after successful migration
+            local removed = 0
+            if type(charData.currencyDiscovery) == "table" then
+                for k in pairs(charData.currencyDiscovery) do
+                    charData.currencyDiscovery[k] = nil
+                    removed = removed + 1
+                end
+                charData.currencyDiscovery = nil
+            end
+            local delMsg = string.format("[AC CT] Cleaned legacy per-character discovery table for %s-%s (removed %d entries).", tostring(server), tostring(character), removed)
+            if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+                DEFAULT_CHAT_FRAME:AddMessage(delMsg, 0.2, 1.0, 0.2)
+            else
+                print(delMsg)
+            end
+        end
     end
     
     -- Add currencyMeta table to capture raw event metadata (gain/lost sources)
@@ -660,15 +709,10 @@ end
 -- Retrieve the table of dynamically discovered currencies for the current character.
 -- Returns a live table reference so callers can mutate it in-place.
 function Storage:GetDiscoveredCurrencies()
-    if not EnsureSavedVariablesStructure() then
-        return {}
-    end
-
-    local server, character = GetCurrentServerAndCharacter()
-    local charData = Accountant_ClassicSaveData[server][character]
-    charData.currencyDiscovery = charData.currencyDiscovery or {}
-
-    return charData.currencyDiscovery
+    -- Use account-wide shared discovery table (Accountant_Classic_CurrencyDB)
+    _G.Accountant_Classic_CurrencyDB = _G.Accountant_Classic_CurrencyDB or {}
+    _G.Accountant_Classic_CurrencyDB.currencyDiscovery = _G.Accountant_Classic_CurrencyDB.currencyDiscovery or {}
+    return _G.Accountant_Classic_CurrencyDB.currencyDiscovery
 end
 
 -- Save basic metadata for a dynamically discovered currency so downstream
@@ -676,9 +720,10 @@ end
 -- Idempotent: safely merges/updates existing entry without clearing user-set flags.
 function Storage:SaveDiscoveredCurrency(currencyID)
     if not currencyID then return false end
-    if not EnsureSavedVariablesStructure() then return false end
-
-    local discovery = self:GetDiscoveredCurrencies()
+    -- Ensure global table exists (Accountant_Classic_CurrencyDB)
+    _G.Accountant_Classic_CurrencyDB = _G.Accountant_Classic_CurrencyDB or {}
+    _G.Accountant_Classic_CurrencyDB.currencyDiscovery = _G.Accountant_Classic_CurrencyDB.currencyDiscovery or {}
+    local discovery = _G.Accountant_Classic_CurrencyDB.currencyDiscovery
     discovery[currencyID] = discovery[currencyID] or {}
     local meta = discovery[currencyID]
 

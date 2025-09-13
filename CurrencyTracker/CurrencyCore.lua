@@ -230,14 +230,14 @@ end
     
     if success then
         isInitialized = true
-        print("CurrencyTracker: Module initialized successfully")
+        print("[AC CT] CurrencyTracker: Module initialized successfully")
         -- Diagnostics (debug only)
         if CurrencyTracker and CurrencyTracker.DEBUG_MODE then
             print(string.format("[AC CT] Core.Init: EventHandler=%s Init=%s Enable=%s",
                 tostring(self.EventHandler), tostring(self.EventHandler and self.EventHandler.Initialize), tostring(self.EventHandler and self.EventHandler.Enable)))
         end
     else
-        print("CurrencyTracker: Module initialization failed")
+        print("[AC CT] CurrencyTracker: Module initialization failed")
     end
     
     return success
@@ -286,9 +286,9 @@ function CurrencyTracker:Enable()
     
     if success then
         isEnabled = true
-        print("CurrencyTracker: Module enabled")
+        print("[AC CT] CurrencyTracker: Module enabled")
     else
-        print("CurrencyTracker: Module enable failed")
+        print("[AC CT] CurrencyTracker: Module enable failed")
     end
     
     return success
@@ -316,9 +316,9 @@ function CurrencyTracker:Disable()
     
     if success then
         isEnabled = false
-        print("CurrencyTracker: Module disabled")
+        print("[AC CT] CurrencyTracker: Module disabled")
     else
-        print("CurrencyTracker: Module disable failed")
+        print("[AC CT] CurrencyTracker: Module disable failed")
     end
     
     return success
@@ -502,12 +502,6 @@ function CurrencyTracker:OnBagUpdate(bagID)
     end
 end
 
--- Test function retained for compatibility (no-op in headless mode)
-function CurrencyTracker:TestTwoTierSystem()
-    print("CurrencyTracker: TestTwoTierSystem is not applicable in headless mode")
-    return nil
-end
-
 -- Function to get system status
 function CurrencyTracker:GetStatus()
     local status = {
@@ -583,7 +577,7 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
             if CurrencyTracker.Storage and CurrencyTracker.Storage.ResetAllData then
                 local ok = CurrencyTracker.Storage:ResetAllData()
                 if ok then
-                    print("CurrencyTracker: storage reset complete for current character (gold data untouched)")
+                    print("[AC CT] CurrencyTracker: storage reset complete for current character (gold data untouched)")
                 else
                     print("CurrencyTracker: storage reset failed")
                 end

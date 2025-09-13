@@ -21,7 +21,7 @@
 ## X-Original-Author: arith
 ## Version: v3.00.00
 ## OptionalDeps: LibStub, CallbackHandler-1.0, Ace3, LibDBIcon-1.0, LibDialog-1.0, !LibUIDropDownMenu
-## SavedVariables: Accountant_ClassicSaveData, Accountant_ClassicDB, Accountant_Classic_NewDB, Accountant_ClassicZoneDB
+## SavedVariables: Accountant_ClassicSaveData, Accountant_ClassicDB, Accountant_Classic_NewDB, Accountant_ClassicZoneDB, Accountant_Classic_CurrencyDB
 ## X-Credits: Sabaki, Shadow, Rophy
 ## X-Date: 2024-01-30T13:08:54Z
 ## X-Donate: https://github.com/sponsors/kamusis
