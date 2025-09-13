@@ -228,3 +228,19 @@ L["ConcentrationCast"] = "Concentration Cast"
 -- Currency Tracker - Custom internal source labels
 -- Friendly names for string keys used by the headless Currency Tracker.
 L["BaselinePrime"] = "Baseline (Initial Balance)"
+
+-- Currency Tracker - /ct output strings (headers and labels)
+-- Single-currency detail
+L["CT_HeaderFormat"] = "=== %s (id: %s) - %s ==="
+L["CT_TotalIncome"] = "Total Income"
+L["CT_TotalOutgoing"] = "Total Outgoing"
+L["CT_NetChange"] = "Net Change"
+L["CT_TransactionsBySource"] = "Transactions by Source"
+L["CT_NoTransactions"] = "No transactions recorded."
+
+-- Summary view (all currencies)
+L["CT_NoCurrencyData"] = "No currency data available."
+L["CT_AllCurrenciesHeader"] = "=== All Currencies - %s ==="
+L["CT_LineIncome"] = "Income"
+L["CT_LineOutgoing"] = "Outgoing"
+L["CT_LineNet"] = "Net"

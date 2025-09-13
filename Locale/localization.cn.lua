@@ -220,3 +220,19 @@ L["ConcentrationCast"] = "专注施法"
 -- 货币追踪器 - 自定义内部来源标签
 -- 为字符串键提供友好名称（仅供货币追踪器使用）。
 L["BaselinePrime"] = "基线补写（初始余额）"
+
+-- 货币追踪器 - /ct 输出文案（标题与标签）
+-- 单币种详情
+L["CT_HeaderFormat"] = "=== %s (id: %s) - %s ==="
+L["CT_TotalIncome"] = "总收入"
+L["CT_TotalOutgoing"] = "总支出"
+L["CT_NetChange"] = "净变化"
+L["CT_TransactionsBySource"] = "来源分类的变动"
+L["CT_NoTransactions"] = "没有记录到任何交易。"
+
+-- 汇总视图（所有货币）
+L["CT_NoCurrencyData"] = "没有可用的货币数据。"
+L["CT_AllCurrenciesHeader"] = "=== 所有货币 - %s ==="
+L["CT_LineIncome"] = "收入"
+L["CT_LineOutgoing"] = "支出"
+L["CT_LineNet"] = "净值"

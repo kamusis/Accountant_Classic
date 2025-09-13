@@ -738,6 +738,26 @@ function CurrencyTracker:ParseShowCommand(command)
     return timeframe, currencyID
 end
 
+-- Map internal timeframe keys to localized display labels
+local function CT_GetTimeframeLabel(tf)
+    -- Prefer existing UI tab labels where possible
+    local map = {
+        Session = "This Session",
+        Day = "Today",
+        PrvDay = "Prv. Day",
+        Week = "This Week",
+        PrvWeek = "Prv. Week",
+        Month = "This Month",
+        PrvMonth = "Prv. Month",
+        Year = "This Year",
+        PrvYear = "Prv. Year",
+        Total = "Total",
+    }
+    local key = map[tf] or tf
+    local LL = CT_GetL()
+    return (LL and LL[key]) or key
+end
+
 -- Handle /ct show* commands
 function CurrencyTracker:ShowCurrencyData(command)
     local timeframe, currencyID = self:ParseShowCommand(command)
@@ -779,14 +799,21 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
         currencyName = L[currencyName]
     end
 
-    print(string.format("=== %s (id: %s) - %s ===", currencyName, tostring(currencyID), tostring(timeframe)))
-    print(string.format("Total Income: %d", (data and data.income) or 0))
-    print(string.format("Total Outgoing: %d", (data and data.outgoing) or 0))
-    print(string.format("Net Change: %d", (data and data.net) or 0))
+    local LL = CT_GetL()
+    local headerFmt = (LL and LL["CT_HeaderFormat"]) or "=== %s (id: %s) - %s ==="
+    local lblIncome = (LL and LL["CT_TotalIncome"]) or "Total Income"
+    local lblOutgoing = (LL and LL["CT_TotalOutgoing"]) or "Total Outgoing"
+    local lblNetChange = (LL and LL["CT_NetChange"]) or "Net Change"
+
+    print(string.format(headerFmt, currencyName, tostring(currencyID), CT_GetTimeframeLabel(tostring(timeframe))))
+    print(string.format("%s: %d", lblIncome, (data and data.income) or 0))
+    print(string.format("%s: %d", lblOutgoing, (data and data.outgoing) or 0))
+    print(string.format("%s: %d", lblNetChange, (data and data.net) or 0))
 
     -- Prefer a map of sources if available; fall back to transactions list
     if data and data.sources and next(data.sources) then
-        print("Transactions by Source:")
+        local lblBySource = (LL and LL["CT_TransactionsBySource"]) or "Transactions by Source"
+        print(lblBySource .. ":")
         for source, amounts in pairs(data.sources) do
             local income = (amounts and amounts.income) or (amounts and amounts.In) or 0
             local outgoing = (amounts and amounts.outgoing) or (amounts and amounts.Out) or 0
@@ -814,15 +841,18 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
                 sourceLabel = L[sourceLabel]
             end
 
-            print(string.format("  %s: +%d | -%d (net: %s%d)",
+            local lblNet = (LL and LL["CT_LineNet"]) or "net"
+            print(string.format("  %s: +%d | -%d (%s: %s%d)",
                 sourceLabel,
                 income,
                 outgoing,
+                lblNet,
                 (net >= 0 and "+" or ""),
                 net))
         end
     elseif data and data.transactions and #data.transactions > 0 then
-        print("Transactions by Source:")
+        local lblBySource = (LL and LL["CT_TransactionsBySource"]) or "Transactions by Source"
+        print(lblBySource .. ":")
         for _, transaction in ipairs(data.transactions) do
             local income = transaction.income or 0
             local outgoing = transaction.outgoing or 0
@@ -847,15 +877,18 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
             if type(label) == "string" and L and L[label] then
                 label = L[label]
             end
-            print(string.format("  %s: +%d | -%d (net: %s%d)",
+            local lblNet = (LL and LL["CT_LineNet"]) or "net"
+            print(string.format("  %s: +%d | -%d (%s: %s%d)",
                 label,
                 income,
                 outgoing,
+                lblNet,
                 (net >= 0 and "+" or ""),
                 net))
         end
     else
-        print("No transactions recorded.")
+        local lblNone = (LL and LL["CT_NoTransactions"]) or "No transactions recorded."
+        print(lblNone)
     end
     print("=========================")
 end
@@ -870,11 +903,17 @@ function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
     end
 
     if not currencies or #currencies == 0 then
-        print("No currency data available.")
+        local LL = CT_GetL()
+        local lblNoData = (LL and LL["CT_NoCurrencyData"]) or "No currency data available."
+        print(lblNoData)
         return
     end
 
-    print(string.format("=== All Currencies - %s ===", tostring(timeframe)))
+    do
+        local LL = CT_GetL()
+        local headerFmt = (LL and LL["CT_AllCurrenciesHeader"]) or "=== All Currencies - %s ==="
+        print(string.format(headerFmt, CT_GetTimeframeLabel(tostring(timeframe))))
+    end
     -- Default behavior: hide currencies explicitly marked as tracked=false in discovery metadata.
     -- Use 'verbose' option to include all currencies regardless of tracked flag.
     local discovered = {}
@@ -891,12 +930,16 @@ function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
             local name = (info and info.name) or ("Currency " .. tostring(cid))
             if L and L[name] then name = L[name] end
             local net = (data and data.net) or 0
-            print(string.format("%s (id=%d): Income %d | Outgoing %d | Net %s%d",
+            local LL = CT_GetL()
+            local lblIncome = (LL and LL["CT_LineIncome"]) or "Income"
+            local lblOutgoing = (LL and LL["CT_LineOutgoing"]) or "Outgoing"
+            local lblNet = (LL and LL["CT_LineNet"]) or "Net"
+            print(string.format("%s (id=%d): %s %d | %s %d | %s %s%d",
                 name,
                 cid,
-                (data and data.income) or 0,
-                (data and data.outgoing) or 0,
-                (net >= 0 and "+" or ""),
+                lblIncome, (data and data.income) or 0,
+                lblOutgoing, (data and data.outgoing) or 0,
+                lblNet, (net >= 0 and "+" or ""),
                 net))
         end
     end
