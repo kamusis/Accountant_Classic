@@ -881,16 +881,81 @@ Test plan
 Scope
 - Modules: `CurrencyTracker/CurrencyConstants.lua`, `Locale/localization.*.lua`, `CurrencyTracker/CurrencyCore.lua`, `CurrencyTracker/CurrencyDataManager.lua`
 
-Investigation
-SourceCode: 35 -> "QUEST_REWARD"
-
+Enum.CurrencySource
+[https://warcraft.wiki.gg/wiki/CURRENCY_DISPLAY_UPDATE](https://warcraft.wiki.gg/wiki/CURRENCY_DISPLAY_UPDATE)
+0	ConvertOldItem	
+1	ConvertOldPvPCurrency	
+2	ItemRefund	
+3	QuestReward	
+4	Cheat	
+5	Vendor	
+6	PvPKillCredit	
+7	PvPMetaCredit	
+8	PvPScriptedAward	
+9	Loot	
+10	UpdatingVersion	
+11	LFGReward	
+12	Trade	
+13	Spell	
+14	ItemDeletion	
+15	RatedBattleground	
+16	RandomBattleground	
+17	Arena	
+18	ExceededMaxQty	
+19	PvPCompletionBonus	
+20	Script	
+21	GuildBankWithdrawal	
+22	Pushloot	
+23	GarrisonBuilding	
+24	PvPDrop	
+25	GarrisonFollowerActivation	
+26	GarrisonBuildingRefund	
+27	GarrisonMissionReward	
+28	GarrisonResourceOverTime	
+29	QuestRewardIgnoreCapsDeprecated	
+30	GarrisonTalent	
+31	GarrisonWorldQuestBonus	
+32	PvPHonorReward	
+33	BonusRoll	
+34	AzeriteRespec	
+35	WorldQuestReward	
+36	WorldQuestRewardIgnoreCapsDeprecated	
+37	FactionConversion	
+38	DailyQuestReward	
+39	DailyQuestWarModeReward	
+40	WeeklyQuestReward	
+41	WeeklyQuestWarModeReward	
+42	AccountCopy	
+43	WeeklyRewardChest	
+44	GarrisonTalentTreeReset	
+45	DailyReset	
+46	AddConduitToCollection	
+47	Barbershop	
+48	ConvertItemsToCurrencyValue	
+49	PvPTeamContribution	
+50	Transmogrify	
+51	AuctionDeposit	
+52	PlayerTrait	
+53	PhBuffer_53	
+54	PhBuffer_54	
+55	RenownRepGain	
+56	CraftingOrder	
+57	CatalystBalancing	
+58	CatalystCraft	
+59	ProfessionInitialAward	
+60	PlayerTraitRefund	
+61	AccountHwmUpdate	
+62	ConvertItemsToCurrencyAndReputation	
+63	PhBuffer_63	
+64	SpellSkipLinkedCurrency	
+65	AccountTransfer
 
 Design
 - Source tokens
   - Maintain a numeric-code → token map in `CurrencyConstants.lua`:
-    - `SourceCodeTokens[9] = "CONTAINER_REWARD"`
-    - `SourceCodeTokens[17] = "MAIL_REWARD"`
-    - `SourceCodeTokens[52] = "VENDOR_PURCHASE"`
+    - `SourceCodeTokens[9] = "Loot"`
+    - `SourceCodeTokens[17] = "Arena"`
+    - `SourceCodeTokens[52] = "PlayerTrait"`
   - At display time, resolve code via `CurrencyTracker.SourceCodeTokens[math.abs(code)]`.
   - Translate token via `L[token]` with fallbacks to the raw token and finally `S:<code>`.
 - Currency names
@@ -899,9 +964,9 @@ Design
 
 Localization files
 - Add to each `Locale/localization.*.lua`:
-  - `L["CONTAINER_REWARD"] = "..."`
-  - `L["MAIL_REWARD"] = "..."`
-  - `L["VENDOR_PURCHASE"] = "..."`
+  - `L["Loot"] = "Loot"`
+  - `L["Arena"] = "Arena"`
+  - `L["PlayerTrait"] = "PlayerTrait"`
   - Optional currency name tokens if needed.
 
 Insertion points
