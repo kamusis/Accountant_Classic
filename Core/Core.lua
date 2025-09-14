@@ -152,6 +152,8 @@ local AC_FIRSTLOADED = false
 -- AC_LOG_PRIMED = false means baseline not initialized yet; the first safe path
 -- (PLAYER_MONEY or CHAT_MSG_MONEY) will initialize it. After priming, logging runs
 -- normally. We will also clear AC_FIRSTLOADED at that time to preserve intent.
+-- Note: We use a persistent flag in options to ensure priming only happens once per character
+-- Initialize to false first, then update after AccountantClassic_Profile is loaded
 local AC_LOG_PRIMED = false
 
 --
@@ -187,6 +189,7 @@ local AccountantClassicDefaultOptions = {
 	totalcash = 0,
 	faction = AC_FACTION,
 	class = AC_CLASS,
+	primed = false,  -- Persistent flag to track if baseline priming has been done
 };
 
 local function TableIndex(t,val)
@@ -300,6 +303,9 @@ local function initOptions()
 	AccountantClassic_Profile = Accountant_ClassicSaveData[AC_SERVER][AC_PLAYER];
 
 	AccountantClassic_UpdateOptions(AccountantClassic_Profile["options"]);
+	
+	-- Initialize AC_LOG_PRIMED from persistent storage after profile is loaded
+	AC_LOG_PRIMED = AccountantClassic_Profile["options"].primed or false
 
 	AccountantClassic_InitZoneDB();
 end
@@ -1093,6 +1099,7 @@ local function updateLog()
         AC_LASTMONEY = GetMoney()
         AccountantClassic_Profile["options"].totalcash = AC_LASTMONEY
         AC_LOG_PRIMED = true
+        AccountantClassic_Profile["options"].primed = true  -- Persistent flag
         AC_FIRSTLOADED = false
         AccountantClassic_ShowPrimingAlert()
         return
@@ -1261,6 +1268,7 @@ local function AccountantClassic_OnShareMoney(arg1)
 		AC_LASTMONEY = GetMoney()
 		AccountantClassic_Profile["options"].totalcash = AC_LASTMONEY
 		AC_LOG_PRIMED = true
+		AccountantClassic_Profile["options"].primed = true  -- Persistent flag
 		AC_FIRSTLOADED = false
 		AccountantClassic_ShowPrimingAlert()
 		return
@@ -1530,6 +1538,7 @@ function AccountantClassic_OnEvent(self, event, ...)
             AC_LASTMONEY = GetMoney()
             AccountantClassic_Profile["options"].totalcash = AC_LASTMONEY
             AC_LOG_PRIMED = true
+            AccountantClassic_Profile["options"].primed = true  -- Persistent flag
             AC_FIRSTLOADED = false
             AccountantClassic_ShowPrimingAlert()
             return
