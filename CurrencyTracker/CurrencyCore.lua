@@ -586,6 +586,61 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
         end
     elseif cmd:find("^status%s*$") then
         CurrencyTracker:ShowStatus()
+    elseif cmd:find("^get%-currency%-info") then
+        -- Test helper: dump all fields returned by C_CurrencyInfo.GetCurrencyInfo for a given currency ID
+        -- Usage: /ct get-currency-info <id>
+        local sub = cmd:gsub("^get%-currency%-info%s*", "")
+        sub = sub:gsub("^%s+", "")
+        local id = tonumber(sub:match("^(%d+)"))
+        if not id then
+            print("Usage: /ct get-currency-info <currencyId>")
+            return
+        end
+        if not (C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo) then
+            print("C_CurrencyInfo API not available")
+            return
+        end
+        local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfo, id)
+        if not ok or type(info) ~= "table" or not next(info) then
+            print(string.format("Currency %d not found or no info returned.", id))
+            return
+        end
+
+        print(string.format("=== Currency Info (id=%d) ===", id))
+        -- Known field order for readability
+        local ordered = {
+            "name", "description", "quantity", "trackedQuantity", "iconFileID",
+            "maxQuantity", "canEarnPerWeek", "quantityEarnedThisWeek", "isTradeable", "quality",
+            "maxWeeklyQuantity", "totalEarned", "discovered", "useTotalEarnedForMaxQty",
+            "isHeader", "isHeaderExpanded", "isTypeUnused", "isShowInBackpack"
+        }
+        local printed = {}
+        local function printKV(k, v)
+            local t = type(v)
+            if t == "boolean" then
+                print(string.format("  %s: %s", k, v and "true" or "false"))
+            elseif t == "number" then
+                print(string.format("  %s: %s", k, tostring(v)))
+            elseif t == "string" then
+                print(string.format("  %s: %s", k, v))
+            else
+                -- tables or other types: tostring fallback
+                print(string.format("  %s: %s", k, tostring(v)))
+            end
+        end
+        for _, k in ipairs(ordered) do
+            if info[k] ~= nil then
+                printKV(k, info[k])
+                printed[k] = true
+            end
+        end
+        -- Print any remaining fields
+        for k, v in pairs(info) do
+            if not printed[k] then
+                printKV(k, v)
+            end
+        end
+        print("=== End Currency Info ===")
     elseif cmd:find("^discover") then
         -- /ct discover list | track <id> [on|off] | clear
         local sub = cmd:gsub("^discover%s*", "")
@@ -804,11 +859,23 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
     local lblIncome = (LL and LL["CT_TotalIncome"]) or "Total Income"
     local lblOutgoing = (LL and LL["CT_TotalOutgoing"]) or "Total Outgoing"
     local lblNetChange = (LL and LL["CT_NetChange"]) or "Net Change"
+    local lblTotalMax = (LL and LL["CT_LineTotalMax"]) or "TotalMax"
 
     print(string.format(headerFmt, currencyName, tostring(currencyID), CT_GetTimeframeLabel(tostring(timeframe))))
     print(string.format("%s: %d", lblIncome, (data and data.income) or 0))
     print(string.format("%s: %d", lblOutgoing, (data and data.outgoing) or 0))
     print(string.format("%s: %d", lblNetChange, (data and data.net) or 0))
+
+    -- Show TotalMax from live API; treat nil/0 as Unlimited; no weekly cap shown
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+        local ok, ci = pcall(C_CurrencyInfo.GetCurrencyInfo, currencyID)
+        if ok and type(ci) == "table" then
+            local lblUnlimited = (LL and LL["CT_Unlimited"]) or "Unlimited"
+            local totalCap = (ci.maxQuantity ~= nil and ci.maxQuantity) or ci.totalMax
+            local totalText = (totalCap and totalCap > 0) and tostring(totalCap) or lblUnlimited
+            print(string.format("%s: %s", lblTotalMax, totalText))
+        end
+    end
 
     -- Prefer a map of sources if available; fall back to transactions list
     if data and data.sources and next(data.sources) then
@@ -934,13 +1001,33 @@ function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
             local lblIncome = (LL and LL["CT_LineIncome"]) or "Income"
             local lblOutgoing = (LL and LL["CT_LineOutgoing"]) or "Outgoing"
             local lblNet = (LL and LL["CT_LineNet"]) or "Net"
-            print(string.format("%s (id=%d): %s %d | %s %d | %s %s%d",
+            local lblTotalMax = (LL and LL["CT_LineTotalMax"]) or "TotalMax"
+            
+            -- Build output string with max limits if available
+            local output = string.format("%s (id=%d): %s %d | %s %d | %s %s%d",
                 name,
                 cid,
                 lblIncome, (data and data.income) or 0,
                 lblOutgoing, (data and data.outgoing) or 0,
                 lblNet, (net >= 0 and "+" or ""),
-                net))
+                net)
+            
+            -- Add total max if available from live API; weekly max removed per request
+            if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+                local ok, ci = pcall(C_CurrencyInfo.GetCurrencyInfo, cid)
+                if ok and type(ci) == "table" then
+                    if CurrencyTracker.DEBUG_MODE then
+                        print(string.format("DEBUG: Currency %d - maxQuantity: %s (legacy totalMax: %s)",
+                            cid, tostring(ci.maxQuantity), tostring(ci.totalMax)))
+                    end
+                    local lblUnlimited = (LL and LL["CT_Unlimited"]) or "Unlimited"
+                    local totalCap = (ci.maxQuantity ~= nil and ci.maxQuantity) or ci.totalMax
+                    local totalMaxText = (totalCap and totalCap > 0) and tostring(totalCap) or lblUnlimited
+                    output = output .. string.format(" | %s %s", lblTotalMax, totalMaxText)
+                end
+            end
+            
+            print(output)
         end
     end
     print("=========================")
@@ -992,4 +1079,5 @@ function CurrencyTracker:ShowHelp()
     print("  /ct repair baseline preview - Compare AC-CT Total with live amounts and list mismatches")
     print("  /ct repair baseline - Apply Total-only corrections to match live amounts (same checks as preview)")
     print("  /ct meta show <timeframe> <id> - Inspect raw gain/lost source counts for a currency")
+    print("  /ct get-currency-info <currencyId> - Dump C_CurrencyInfo fields for the given currency ID (debug)")
 end
