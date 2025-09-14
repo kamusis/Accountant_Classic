@@ -885,7 +885,7 @@ local function AccountantClassic_LogsShifting()
 					end
 				end
 
-				Accountant_ClassicSaveData[serverkey][charkey]["options"]["date"] = cdate;
+				Accountant_ClassicSaveData[serverkey][charkey]["options"]["date"] = tostring(cdate);
 			end
 
 			-- Check to see if the week has rolled over
@@ -926,11 +926,11 @@ local function AccountantClassic_LogsShifting()
 					end
 				end
 
-				Accountant_ClassicSaveData[serverkey][charkey]["options"]["dateweek"] = addon:WeekStart();
+				Accountant_ClassicSaveData[serverkey][charkey]["options"]["dateweek"] = tostring(addon:WeekStart());
 			end
 
 			-- Check to see if the month has rolled over
-			if (Accountant_ClassicSaveData[serverkey][charkey]["options"]["month"] ~= cmonth) then
+			if (Accountant_ClassicSaveData[serverkey][charkey]["options"]["month"] ~= tostring(cmonth)) then
 				-- It's a new month! clear out the month tab
 				Accountant_ClassicSaveData[serverkey][charkey]["options"]["prvmonth"] = Accountant_ClassicSaveData[serverkey][charkey]["options"]["month"];
 				for mode, value in pairs(Accountant_ClassicSaveData[serverkey][charkey]["data"]) do
@@ -967,11 +967,11 @@ local function AccountantClassic_LogsShifting()
 					end
 				end
 
-				Accountant_ClassicSaveData[serverkey][charkey]["options"]["month"] = cmonth;
+				Accountant_ClassicSaveData[serverkey][charkey]["options"]["month"] = tostring(cmonth);
 			end
 
 			-- Check to see if the year has rolled over
-			if (Accountant_ClassicSaveData[serverkey][charkey]["options"]["curryear"] ~= cyear) then
+			if (Accountant_ClassicSaveData[serverkey][charkey]["options"]["curryear"] ~= tostring(cyear)) then
 				-- It's a new year! clear out the year tab
 				Accountant_ClassicSaveData[serverkey][charkey]["options"]["prvyear"] = Accountant_ClassicSaveData[serverkey][charkey]["options"]["curryear"];
 				for mode, value in pairs(Accountant_ClassicSaveData[serverkey][charkey]["data"]) do
@@ -1008,7 +1008,7 @@ local function AccountantClassic_LogsShifting()
 					end
 				end
 
-				Accountant_ClassicSaveData[serverkey][charkey]["options"]["curryear"] = cyear;
+				Accountant_ClassicSaveData[serverkey][charkey]["options"]["curryear"] = tostring(cyear);
 			end
 		end
 	end

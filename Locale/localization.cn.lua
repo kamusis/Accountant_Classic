@@ -239,3 +239,5 @@ L["CT_LineNet"] = "净值"
 L["CT_LineWeeklyMax"] = "周上限"
 L["CT_LineTotalMax"] = "总上限"
 L["CT_Unlimited"] = "无限制"
+-- 逼近上限警告
+L["CT_WarnNearCap"] = "注意：%s 已经达到或超过总上限（%d）的90%%"

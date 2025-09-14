@@ -247,3 +247,5 @@ L["CT_LineNet"] = "Net"
 L["CT_LineWeeklyMax"] = "WeeklyMax"
 L["CT_LineTotalMax"] = "TotalMax"
 L["CT_Unlimited"] = "Unlimited"
+-- Near-cap warning
+L["CT_WarnNearCap"] = "Warning: %s has reached or exceeded 90%% of total cap (%d)"

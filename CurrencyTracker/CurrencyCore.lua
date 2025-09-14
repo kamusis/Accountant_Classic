@@ -641,6 +641,108 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
             end
         end
         print("=== End Currency Info ===")
+    elseif cmd:find("^set%-paras%s+near%-cap%-warning") then
+        -- Configure near-cap warning parameters (per-character persistent settings)
+        -- Usage:
+        --   /ct set-paras near-cap-warning enable=true cap_percent=0.9 time_visible_sec=3 fade_duration_sec=0.8
+        -- If no key=value pairs provided, prints current settings.
+        local sub = cmd:gsub("^set%-paras%s+near%-cap%-warning%s*", "")
+        sub = sub:gsub("^%s+", "")
+        -- Normalize common input quirks: replace decimal comma with dot; trim trailing commas
+        sub = sub:gsub(",", ".")
+
+        -- Ensure SV structure is available
+        if not EnsureSavedVariablesStructure or not GetCurrentServerAndCharacter then
+            print("Storage helpers unavailable; cannot save settings.")
+            return
+        end
+        if not EnsureSavedVariablesStructure() then
+            print("Failed to initialize storage structure.")
+            return
+        end
+        local server, character = GetCurrentServerAndCharacter()
+        local sv = _G.Accountant_ClassicSaveData
+        if not (sv and sv[server] and sv[server][character]) then
+            print("No character storage available.")
+            return
+        end
+        local charData = sv[server][character]
+        charData.currencyOptions = charData.currencyOptions or {}
+        charData.currencyOptions.nearCapAlert = charData.currencyOptions.nearCapAlert or {
+            enable = true,
+            cap_percent = 0.90,
+            time_visible_sec = 3.0,
+            fade_duration_sec = 0.8,
+        }
+        local opts = charData.currencyOptions.nearCapAlert
+
+        -- Parse key=value pairs (forgiving parser with aliases and unit suffixes)
+        local updated = false
+        for key, value in string.gmatch(sub or "", "([%w_]+)%s*=%s*([^%s]+)") do
+            local k = string.lower(key)
+            -- Accept some aliases
+            if k == "time" or k == "time_sec" or k == "timevisible" or k == "timevisiblesec" or k == "time_visible" then
+                k = "time_visible_sec"
+            elseif k == "fade" or k == "fade_sec" or k == "fadeduration" or k == "duration" or k == "duration_sec" then
+                k = "fade_duration_sec"
+            end
+
+            if k == "enable" then
+                local v = string.lower(value)
+                if v == "true" or v == "on" or v == "1" or v == "yes" then
+                    opts.enable = true; updated = true
+                elseif v == "false" or v == "off" or v == "0" or v == "no" then
+                    opts.enable = false; updated = true
+                else
+                    print("Invalid value for enable: "..value.." (use true/false)")
+                end
+            elseif k == "cap_percent" then
+                local num = tonumber(value)
+                if num and num > 0 and num <= 1.0 then
+                    opts.cap_percent = num; updated = true
+                else
+                    print("Invalid cap_percent: expected 0-1 (e.g., 0.9)")
+                end
+            elseif k == "time_visible_sec" then
+                -- Strip unit suffixes like 's' or 'sec'
+                local cleaned = tostring(value):gsub("[sS][eE]?[cC]?$", "")
+                local num = tonumber(cleaned)
+                if num and num >= 0 then
+                    opts.time_visible_sec = num; updated = true
+                else
+                    print("Invalid time_visible_sec: expected non-negative number")
+                end
+            elseif k == "fade_duration_sec" then
+                -- Strip unit suffixes like 's' or 'sec'
+                local cleaned = tostring(value):gsub("[sS][eE]?[cC]?$", "")
+                local num = tonumber(cleaned)
+                if num and num >= 0 then
+                    opts.fade_duration_sec = num; updated = true
+                else
+                    print("Invalid fade_duration_sec: expected non-negative number")
+                end
+            else
+                -- Ignore unknown parameters silently to be lenient with user input
+            end
+        end
+
+        -- Touch lastUpdate
+        charData.currencyOptions.lastUpdate = time()
+
+        if updated then
+            print(string.format("Near-cap alert settings updated: enable=%s cap_percent=%.2f time_visible_sec=%.2f fade_duration_sec=%.2f",
+                tostring(opts.enable), opts.cap_percent or 0, opts.time_visible_sec or 0, opts.fade_duration_sec or 0))
+            print("Note: Settings are saved in memory now. Type /reload to make them persistent.")
+        else
+            -- Show current configuration
+            print("Near-cap alert settings:")
+            print(string.format("  enable=%s", tostring(opts.enable)))
+            print(string.format("  cap_percent=%.2f", tonumber(opts.cap_percent or 0.90)))
+            print(string.format("  time_visible_sec=%.2f", tonumber(opts.time_visible_sec or 3.0)))
+            print(string.format("  fade_duration_sec=%.2f", tonumber(opts.fade_duration_sec or 0.8)))
+            print("Usage: /ct set-paras near-cap-warning enable=true cap_percent=0.9 time_visible_sec=3s fade_duration_sec=0.8s")
+            print("  Notes: accepts aliases time= / fade= and unit suffixes 's'/'sec'. Decimal comma is allowed.")
+        end
     elseif cmd:find("^discover") then
         -- /ct discover list | track <id> [on|off] | clear
         local sub = cmd:gsub("^discover%s*", "")
@@ -1033,6 +1135,29 @@ function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
     print("=========================")
 end
 
+function CurrencyTracker:SetNearCapAlert(args)
+    local enable = args.enable == "true" or args.enable == nil
+    local capPercent = tonumber(args.cap_percent) or 0.9
+    local timeVisibleSec = tonumber(args.time_visible_sec) or 3
+    local fadeDurationSec = tonumber(args.fade_duration_sec) or 0.8
+
+    if not self.currencyOptions then self.currencyOptions = {} end
+    if not self.currencyOptions.nearCapAlert then self.currencyOptions.nearCapAlert = {} end
+
+    self.currencyOptions.nearCapAlert.enable = enable
+    self.currencyOptions.nearCapAlert.capPercent = capPercent
+    self.currencyOptions.nearCapAlert.timeVisibleSec = timeVisibleSec
+    self.currencyOptions.nearCapAlert.fadeDurationSec = fadeDurationSec
+
+    if not args.enable and not args.cap_percent and not args.time_visible_sec and not args.fade_duration_sec then
+        print("Current near-cap alert settings:")
+        print(string.format("  enable: %s", tostring(self.currencyOptions.nearCapAlert.enable)))
+        print(string.format("  cap_percent: %.2f", self.currencyOptions.nearCapAlert.capPercent))
+        print(string.format("  time_visible_sec: %d", self.currencyOptions.nearCapAlert.timeVisibleSec))
+        print(string.format("  fade_duration_sec: %.2f", self.currencyOptions.nearCapAlert.fadeDurationSec))
+    end
+end
+
 -- Print help for commands
 function CurrencyTracker:ShowHelp()
     print("CurrencyTracker Commands:")
@@ -1080,4 +1205,6 @@ function CurrencyTracker:ShowHelp()
     print("  /ct repair baseline - Apply Total-only corrections to match live amounts (same checks as preview)")
     print("  /ct meta show <timeframe> <id> - Inspect raw gain/lost source counts for a currency")
     print("  /ct get-currency-info <currencyId> - Dump C_CurrencyInfo fields for the given currency ID (debug)")
+    print("  /ct set-paras near-cap-warning [enable=true|false] [cap_percent=0.9] [time_visible_sec=3] [fade_duration_sec=0.8]")
 end
+

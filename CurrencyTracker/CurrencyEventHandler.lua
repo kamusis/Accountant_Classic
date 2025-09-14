@@ -4,6 +4,9 @@
 
 local addonName = ...
 
+-- Bind localization table for display labels/messages (lazy: safe if AceLocale not present)
+local L = LibStub and LibStub("AceLocale-3.0", true) and LibStub("AceLocale-3.0"):GetLocale("Accountant_Classic", true) or nil
+
 -- Create the EventHandler module
 CurrencyTracker = CurrencyTracker or {}
 CurrencyTracker.EventHandler = {}
@@ -431,6 +434,54 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
             local lossLabel = is1102 and "destroyReason" or "lostSrc"
             CurrencyTracker:LogDebug("CURRENCY_DISPLAY_UPDATE id=%d new=%s chg=%s gainSrc=%s %s=%s srcKey=%s",
                 currencyID, tostring(newQuantity), tostring(change), tostring(quantityGainSource), lossLabel, tostring(quantityLostSource), tostring(sourceKey))
+        end
+
+        -- Near-cap warning on gains: threshold and durations configurable per character
+        if change > 0 and C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+            local ok, ci = pcall(C_CurrencyInfo.GetCurrencyInfo, currencyID)
+            if ok and type(ci) == "table" then
+                local cap = (ci.maxQuantity ~= nil and ci.maxQuantity) or ci.totalMax
+                if cap and cap > 0 then
+                    -- Load per-character settings (defaults: enable=true, cap_percent=0.90, time=3.0, fade=0.8)
+                    local enable, threshold, tVisible, tFade = true, 0.90, 3.0, 0.8
+                    if EnsureSavedVariablesStructure and GetCurrentServerAndCharacter and EnsureSavedVariablesStructure() then
+                        local server, character = GetCurrentServerAndCharacter()
+                        local sv = _G.Accountant_ClassicSaveData
+                        if sv and sv[server] and sv[server][character] then
+                            local co = sv[server][character].currencyOptions
+                            if co and co.nearCapAlert then
+                                local o = co.nearCapAlert
+                                if type(o.enable) == "boolean" then enable = o.enable end
+                                if tonumber(o.cap_percent) then threshold = tonumber(o.cap_percent) end
+                                if tonumber(o.time_visible_sec) then tVisible = tonumber(o.time_visible_sec) end
+                                if tonumber(o.fade_duration_sec) then tFade = tonumber(o.fade_duration_sec) end
+                            end
+                        end
+                    end
+
+                    if enable then
+                        local afterAmt = (newQuantity ~= nil) and newQuantity or (old + change)
+                        local ratio = afterAmt / cap
+                        if ratio >= threshold then
+                            local name = ci.name or ("Currency " .. tostring(currencyID))
+                            -- Localize name via AceLocale if available
+                            if L and L[name] then name = L[name] end
+                            -- Localized warning template (fallback to English)
+                            local tmpl = (L and L["CT_WarnNearCap"]) or "Warning: %s has reached or exceeded 90%% of total cap (%d)"
+                            local msg = string.format(tmpl, tostring(name), cap)
+                            if UIErrorsFrame and UIErrorsFrame.AddMessage then
+                                -- Apply configured timings
+                                if UIErrorsFrame.SetTimeVisible then UIErrorsFrame:SetTimeVisible(tVisible or 3.0) end
+                                if UIErrorsFrame.SetFadeDuration then UIErrorsFrame:SetFadeDuration(tFade or 0.8) end
+                                UIErrorsFrame:AddMessage(msg, 1.0, 0.2, 0.2, 1.0)
+                            else
+                                -- Fallback: red colored chat message
+                                print("|cffff2020" .. msg .. "|r")
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
 end
