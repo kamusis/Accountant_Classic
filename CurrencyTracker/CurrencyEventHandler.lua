@@ -378,14 +378,18 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
     end
 
     if change ~= 0 then
-        -- Determine signed numeric source key
+        -- Determine numeric source key (unified):
+        -- Modern clients often populate quantityGainSource for BOTH gains and losses.
+        -- Prefer quantityGainSource; fall back to quantityLostSource (destroyReason) only if needed.
+        -- Do not encode sign in the source key; the delta sign already determines In/Out.
         local sourceKey
-        if change > 0 and quantityGainSource then
-            sourceKey = tonumber(quantityGainSource)
-        elseif change < 0 and quantityLostSource then
-            sourceKey = -tonumber(quantityLostSource)
-        else
-            sourceKey = "Unknown" -- Unknown
+        do
+            local src = tonumber(quantityGainSource) or tonumber(quantityLostSource)
+            if src then
+                sourceKey = src
+            else
+                sourceKey = "Unknown" -- Unknown
+            end
         end
 
         -- Record raw event metadata (both gain and lost/destroy sources) for analysis

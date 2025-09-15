@@ -769,6 +769,142 @@ function Storage:ValidateData()
     return true
 end
 
+-- Build a preview of repairing negative source keys by removing them and
+-- subtracting their total Out from Total.BaselinePrime.In. This does not modify data.
+-- Returns a summary table:
+-- {
+--   currencies = n,
+--   periods = n,
+--   removedOut = total_out_removed,
+--   details = {
+--     [currencyID] = {
+--       negatives = { ["Session"]=amt, ["Day"]=amt, ... },
+--       totalRemovedOut = amt,
+--     }
+--   }
+-- }
+function Storage:PreviewNegativeSourcesToBaseline()
+    if not EnsureSavedVariablesStructure() then
+        return { currencies = 0, periods = 0, removedOut = 0, details = {} }
+    end
+
+    local server, character = GetCurrentServerAndCharacter()
+    local charData = Accountant_ClassicSaveData[server][character]
+    local details = {}
+    local periodsTouched = 0
+    local currenciesTouched = 0
+    -- We define removedOut to mean removal counted from the Total timeframe only,
+    -- because only Total is compensated by BaselinePrime.In.
+    local removedTotal = 0
+
+    local PERIODS = { "Session", "Day", "Week", "Month", "Year", "Total" }
+
+    for cid, periods in pairs(charData.currencyData or {}) do
+        local perCur = { negatives = {}, totalRemovedOut = 0, removedFromTotal = 0 }
+        local hadAny = false
+        for _, tf in ipairs(PERIODS) do
+            local bucket = periods[tf]
+            if type(bucket) == "table" then
+                local sumOut = 0
+                for sk, rec in pairs(bucket) do
+                    if type(sk) == "number" and sk < 0 and type(rec) == "table" then
+                        sumOut = sumOut + (rec.Out or 0)
+                    end
+                end
+                if sumOut > 0 then
+                    perCur.negatives[tf] = sumOut
+                    perCur.totalRemovedOut = perCur.totalRemovedOut + sumOut
+                    if tf == "Total" then
+                        perCur.removedFromTotal = perCur.removedFromTotal + sumOut
+                    end
+                    periodsTouched = periodsTouched + 1
+                    hadAny = true
+                end
+            end
+        end
+        if hadAny then
+            details[cid] = perCur
+            removedTotal = removedTotal + (perCur.removedFromTotal or 0)
+            currenciesTouched = currenciesTouched + 1
+        end
+    end
+
+    return {
+        currencies = currenciesTouched,
+        periods = periodsTouched,
+        removedOut = removedTotal, -- from Total timeframe only
+        details = details,
+    }
+end
+
+-- Apply the negative-source repair:
+-- 1) Remove entries with numeric source keys < 0 across Session/Day/Week/Month/Year/Total
+-- 2) Subtract the total removed Out across all periods from Total.BaselinePrime.In (clamped to >= 0)
+-- Returns a summary table similar to Preview with an additional field baselineApplied.
+function Storage:ApplyNegativeSourcesToBaseline()
+    if not EnsureSavedVariablesStructure() then
+        return { currencies = 0, periods = 0, removedOut = 0, baselineApplied = 0, details = {} }
+    end
+
+    local server, character = GetCurrentServerAndCharacter()
+    local sv = Accountant_ClassicSaveData
+    local charData = sv[server][character]
+    charData.currencyData = charData.currencyData or {}
+
+    -- Reuse preview logic to guarantee identical detection behavior
+    local preview = self:PreviewNegativeSourcesToBaseline()
+
+    local baselineApplied = 0
+    local PERIODS = { "Session", "Day", "Week", "Month", "Year", "Total" }
+
+    -- If nothing to do, still touch lastUpdate and return summary with baselineApplied=0
+    if not preview or (preview.currencies or 0) == 0 then
+        charData.currencyOptions = charData.currencyOptions or {}
+        charData.currencyOptions.lastUpdate = time()
+        preview = preview or { currencies = 0, periods = 0, removedOut = 0, details = {} }
+        preview.baselineApplied = 0
+        return preview
+    end
+
+    -- Apply deletions and baseline adjustment based on preview details
+    for cid, rec in pairs(preview.details or {}) do
+        local periods = charData.currencyData[cid]
+        if type(periods) == "table" then
+            -- Remove negative source keys across all timeframes
+            for _, tf in ipairs(PERIODS) do
+                periods[tf] = periods[tf] or {}
+                local bucket = periods[tf]
+                if type(bucket) == "table" then
+                    for sk in pairs(bucket) do
+                        if type(sk) == "number" and sk < 0 then
+                            bucket[sk] = nil
+                        end
+                    end
+                end
+            end
+
+            -- Subtract from Total.BaselinePrime.In using preview.removedFromTotal
+            local removedFromTotal = tonumber(rec.removedFromTotal or 0) or 0
+            if removedFromTotal > 0 then
+                periods.Total = periods.Total or {}
+                periods.Total["BaselinePrime"] = periods.Total["BaselinePrime"] or { In = 0, Out = 0 }
+                local before = periods.Total["BaselinePrime"].In or 0
+                local toSub = math.min(before, removedFromTotal)
+                periods.Total["BaselinePrime"].In = before - toSub
+                baselineApplied = baselineApplied + toSub
+            end
+        end
+    end
+
+    -- Touch lastUpdate
+    charData.currencyOptions = charData.currencyOptions or {}
+    charData.currencyOptions.lastUpdate = time()
+
+    -- Return the preview summary augmented with baselineApplied so caller sees the final effect
+    preview.baselineApplied = baselineApplied
+    return preview
+end
+
 -- Retrieve the table of dynamically discovered currencies for the current character.
 -- Returns a live table reference so callers can mutate it in-place.
 function Storage:GetDiscoveredCurrencies()

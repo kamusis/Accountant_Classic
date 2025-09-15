@@ -798,6 +798,46 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
                 print("Usage: /ct repair baseline preview")
                 print("       /ct repair baseline")
             end
+        elseif sub:find("^negative%-sources") then
+            -- /ct repair negative-sources [preview]
+            if not CurrencyTracker.Storage or not CurrencyTracker.Storage.PreviewNegativeSourcesToBaseline or not CurrencyTracker.Storage.ApplyNegativeSourcesToBaseline then
+                print("Repair not available: storage helpers missing")
+            else
+                local rest = sub:gsub("^negative%-sources%s*", "")
+                rest = rest:gsub("^%s+", "")
+                local isPreview = (rest == "preview")
+                local summary
+                if isPreview then
+                    summary = CurrencyTracker.Storage:PreviewNegativeSourcesToBaseline()
+                    print("=== Repair Preview: Negative Source Keys -> BaselinePrime ===")
+                else
+                    summary = CurrencyTracker.Storage:ApplyNegativeSourcesToBaseline()
+                    print("=== Repair Applied: Negative Source Keys -> BaselinePrime ===")
+                end
+
+                local LL = CT_GetL()
+                local function tfLabel(tf)
+                    return (LL and LL[tf]) or tf
+                end
+                print(string.format("Currencies affected: %d", tonumber(summary.currencies or 0)))
+                print(string.format("Timeframes affected: %d", tonumber(summary.periods or 0)))
+                print(string.format("Total removed Out: %d", tonumber(summary.removedOut or 0)))
+                if summary.baselineApplied ~= nil then
+                    print(string.format("Total BaselinePrime.In reduced: %d", tonumber(summary.baselineApplied or 0)))
+                end
+                if summary.details then
+                    for cid, rec in pairs(summary.details) do
+                        local info = CurrencyTracker.DataManager and CurrencyTracker.DataManager:GetCurrencyInfo(cid) or nil
+                        local name = (info and info.name) or ("Currency " .. tostring(cid))
+                        if L and L[name] then name = L[name] end
+                        print(string.format("- %s (id=%d): removedOut=%d", name, cid, tonumber(rec.totalRemovedOut or 0)))
+                        for tf, amt in pairs(rec.negatives or {}) do
+                            print(string.format("  * %s: removedOut=%d", tfLabel(tf), tonumber(amt or 0)))
+                        end
+                    end
+                end
+                print("=== End ===")
+            end
         else
             print("Usage: /ct repair init")
             print("       /ct repair migrate-zero   -- Move numeric source 0 to 'BaselinePrime' across all timeframes")
@@ -805,6 +845,8 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
             print("       /ct repair remove <id> <amount> <source> (income|outgoing)")
             print("       /ct repair baseline preview")
             print("       /ct repair baseline")
+            print("       /ct repair negative-sources preview   -- Show what would be removed and baseline reduction")
+            print("       /ct repair negative-sources           -- Apply removal and baseline reduction")
         end
     elseif cmd:find("^meta") then
         -- /ct meta show <timeframe> <id>
@@ -1203,6 +1245,8 @@ function CurrencyTracker:ShowHelp()
     print("  /ct repair remove <id> <amount> <source> (income|outgoing) - Remove recorded amounts across aggregates")
     print("  /ct repair baseline preview - Compare AC-CT Total with live amounts and list mismatches")
     print("  /ct repair baseline - Apply Total-only corrections to match live amounts (same checks as preview)")
+    print("  /ct repair negative-sources preview - Preview removal of negative source keys and baseline reduction")
+    print("  /ct repair negative-sources - Apply removal of negative source keys and baseline reduction")
     print("  /ct meta show <timeframe> <id> - Inspect raw gain/lost source counts for a currency")
     print("  /ct get-currency-info <currencyId> - Dump C_CurrencyInfo fields for the given currency ID (debug)")
     print("  /ct set-paras near-cap-warning [enable=true|false] [cap_percent=0.9] [time_visible_sec=3] [fade_duration_sec=0.8]")
