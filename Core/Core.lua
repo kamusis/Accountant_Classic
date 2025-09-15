@@ -350,6 +350,9 @@ function AccountantClassic_RegisterEvents(self)
             self:RegisterEvent( value );
         end
 	--self:RegisterForDrag("LeftButton");
+    -- Ensure early, reliable baseline priming after the player fully logs in
+    -- without depending on later money-change events.
+    self:RegisterEvent("PLAYER_LOGIN")
 end
 
 local function createACFrames()
@@ -1528,9 +1531,9 @@ function AccountantClassic_OnEvent(self, event, ...)
 	elseif event == "AUCTION_HOUSE_SHOW" then
 		AC_LOGTYPE = "AH";
 	-- This event is supposed to be fired before PLAYER_MONEY.
-	elseif event == "CHAT_MSG_MONEY" then
-		AccountantClassic_OnShareMoney(arg1);
-	elseif event == "PLAYER_MONEY" then
+	    elseif event == "CHAT_MSG_MONEY" then
+        AccountantClassic_OnShareMoney(arg1);
+    elseif event == "PLAYER_MONEY" then
         -- If baseline has not been initialized yet, use the first PLAYER_MONEY
         -- event as a safe priming point. This sets AC_LASTMONEY to the current
         -- balance and prevents the initial balance from being counted as income.
@@ -1547,22 +1550,35 @@ function AccountantClassic_OnEvent(self, event, ...)
             ACC_Print("Player money changed, starting to update money log ...")
         end
         updateLog();
-	-- Currency tracking events
-	elseif event == "CURRENCY_DISPLAY_UPDATE" then
-		-- Avoid duplicate handling: CurrencyTracker.EventHandler registers its own frame
-		-- and receives CURRENCY_DISPLAY_UPDATE directly. Only forward as a fallback
-		-- if the module or its EventHandler is unavailable.
+    elseif event == "PLAYER_LOGIN" then
+        -- Perform one-time baseline priming as early as possible in a stable state
+        -- (player fully logged in). This avoids swallowing the first real money
+        -- change of the session that could occur if priming happened later.
+        -- Only run if this character has not been primed before.
+        if not AC_LOG_PRIMED then
+            AC_LASTMONEY = GetMoney()
+            AccountantClassic_Profile["options"].totalcash = AC_LASTMONEY
+            AC_LOG_PRIMED = true
+            AccountantClassic_Profile["options"].primed = true  -- Persistent flag
+            AC_FIRSTLOADED = false
+            AccountantClassic_ShowPrimingAlert()
+        end
+    -- Currency tracking events
+    elseif event == "CURRENCY_DISPLAY_UPDATE" then
+        -- Avoid duplicate handling: CurrencyTracker.EventHandler registers its own frame
+        -- and receives CURRENCY_DISPLAY_UPDATE directly. Only forward as a fallback
+        -- if the module or its EventHandler is unavailable.
 		if not (CurrencyTracker and CurrencyTracker.EventHandler) then
 			if CurrencyTracker and CurrencyTracker.OnCurrencyDisplayUpdate then
 				CurrencyTracker:OnCurrencyDisplayUpdate(...)
 			end
 		end
-	elseif event == "BAG_UPDATE" then
-		-- Forward bag update events to CurrencyTracker for fallback currency detection
-		if CurrencyTracker and CurrencyTracker.OnBagUpdate then
-			CurrencyTracker:OnBagUpdate(arg1)
-		end
-	end
+    elseif event == "BAG_UPDATE" then
+        -- Forward bag update events to CurrencyTracker for fallback currency detection
+        if CurrencyTracker and CurrencyTracker.OnBagUpdate then
+            CurrencyTracker:OnBagUpdate(arg1)
+        end
+    end
 
 	if AccountantClassic_Verbose and AC_LOGTYPE ~= oldType then ACC_Print("Accountant mode changed to '"..AC_LOGTYPE.."'"); end
 	
