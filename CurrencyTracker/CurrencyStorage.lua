@@ -156,6 +156,34 @@ function Storage:RepairRemove(currencyID, amount, sourceKey, kind)
     local source = sourceKey
     if source == nil then source = "Unknown" end
 
+    -- Resolve string source keys in a tolerant way: case-insensitive and localized aliases
+    if type(source) == "string" then
+        local function findExistingKey(target)
+            for _, period in ipairs(periods) do
+                local bucket = currencyData[period]
+                if type(bucket) == "table" then
+                    for key in pairs(bucket) do
+                        if type(key) == "string" and string.lower(key) == target then
+                            return key
+                        end
+                    end
+                end
+            end
+            return nil
+        end
+        local want = string.lower(tostring(source))
+        local resolved = findExistingKey(want)
+        if not resolved then
+            -- Common canonical aliases
+            if want == "unknown" or want == string.lower("未知") then
+                resolved = findExistingKey("unknown") or "Unknown"
+            elseif want == "baselineprime" or want == string.lower("基线补写（初始余额）") then
+                resolved = findExistingKey("baselineprime") or "BaselinePrime"
+            end
+        end
+        source = resolved or source
+    end
+
     local removedTotal = 0
     for _, period in ipairs(periods) do
         currencyData[period] = currencyData[period] or {}
@@ -179,7 +207,7 @@ function Storage:RepairRemove(currencyID, amount, sourceKey, kind)
     Accountant_ClassicSaveData[server][character].currencyOptions.lastUpdate = time()
     SafeLogDebug("RepairRemove applied: ID=%d, kind=%s, amount=%d, source=%s, removed_sum=%d",
         currencyID, k, amount, tostring(source), removedTotal)
-    return true
+    return removedTotal > 0
 end
 
 -- Clear the Session period for all currencies (called on login/initialize)

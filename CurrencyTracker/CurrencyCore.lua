@@ -120,18 +120,28 @@ function CurrencyTracker:RepairRemove(sub)
         print("Repair not available: storage helper missing")
         return
     end
+    -- Accept either numeric or string source tokens (e.g., 16 or Unknown)
     local id, amount, source, kind = sub:match("remove%s+(%d+)%s+(%d+)%s+(%d+)%s+(%a+)")
-    id = tonumber(id)
-    amount = tonumber(amount)
-    source = tonumber(source)
+    if id and amount and source and kind then
+        id = tonumber(id)
+        amount = tonumber(amount)
+        source = tonumber(source) -- numeric source
+    else
+        -- Fallback: string source (no spaces), e.g., Unknown or BaselinePrime
+        id, amount, source, kind = sub:match("remove%s+(%d+)%s+(%d+)%s+([^%s]+)%s+(%a+)")
+        id = tonumber(id)
+        amount = tonumber(amount)
+        -- keep source as string
+    end
     if not id or not amount or not source or not kind then
         print("Usage: /ct repair remove <id> <amount> <source> (income|outgoing)")
+        print("  <source> can be a number (e.g., 16) or a string token (e.g., Unknown, BaselinePrime)")
         return
     end
     local ok = self.Storage:RepairRemove(id, amount, source, kind)
     if ok then
-        print(string.format("Removed %d from %s for currency %d (source=%d) across periods",
-            amount, string.lower(kind), id, source))
+        print(string.format("Removed %d from %s for currency %d (source=%s) across periods",
+            amount, string.lower(kind), id, tostring(source)))
     else
         print("Removal failed")
     end
