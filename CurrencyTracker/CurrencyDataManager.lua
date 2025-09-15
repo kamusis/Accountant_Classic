@@ -102,13 +102,13 @@ end
 function DataManager:GetSupportedCurrencies()
     -- Seed set from constants (may be nil in fallback)
     local seeded = (Constants and Constants.SupportedCurrencies) or {
-        [3008] = {
-            id = 3008,
-            name = "Valorstones",
-            expansion = "TWW",
-            expansionName = "The War Within",
-            patch = "11.0.0",
-            minVersion = 110000,
+        [1166] = {
+            id = 1166,
+            name = "Timewarped Badge",
+            expansion = "WOD",
+            expansionName = "Warlords of Draenor",
+            patch = "6.2.0",
+            minVersion = 60000,
             isTracked = true,
         }
     }
@@ -422,5 +422,5 @@ function DataManager:LoadCurrencySelection()
     if CurrencyTracker.Storage then
         return CurrencyTracker.Storage:LoadCurrencySelection()
     end
-    return 3008 -- Default to Valorstones
+    return 1166 -- Default to Timewarped Badge
 end

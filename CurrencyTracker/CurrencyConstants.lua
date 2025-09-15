@@ -116,108 +116,24 @@ CurrencyConstants.Expansions = {
     }
 }
 
--- Supported currencies with metadata
--- Organized by expansion and patch for easy filtering and dropdown grouping
+-- Supported currencies with metadata (seed set)
+-- Keep this list minimal and long-lived to remain stable across expansions.
+-- Other currencies will be added dynamically at runtime when discovered.
 CurrencyConstants.SupportedCurrencies = {
-    -- The War Within currencies
-    [3008] = { -- Valorstones (PRIMARY TEST CURRENCY)
-        id = 3008,
-        name = "Valorstones",
-        icon = "Interface\\Icons\\inv_10_gearupgrade_valorstones",
-        expansion = "TWW",
-        expansionName = "The War Within",
-        patch = "11.0.0",
-        minVersion = 110000,
-        maxQuantity = 2000,
+    -- Timewarped Badge (introduced in Warlords of Draenor; still used across many versions)
+    [1166] = {
+        id = 1166,
+        name = "Timewarped Badge",
+        icon = "Interface\\Icons\\pvecurrency-justice", -- generic fallback icon; live API will override
+        expansion = "WOD",
+        expansionName = "Warlords of Draenor",
+        patch = "6.2.0",
+        minVersion = 60000, -- 6.0.0 and above
+        maxQuantity = 0, -- no practical cap
         isTracked = true,
-        description = "Used to upgrade gear in The War Within",
-        category = "Upgrade Materials"
-    },
-    
-    [3089] = { -- Residual Memories
-        id = 3089,
-        name = "Residual Memories",
-        icon = "Interface\\Icons\\inv_misc_enchantedscroll",
-        expansion = "TWW",
-        expansionName = "The War Within",
-        patch = "11.0.0",
-        minVersion = 110000,
-        maxQuantity = 1000,
-        isTracked = false, -- Not tracked by default, but available
-        description = "Memories from the depths of Khaz Algar",
+        description = "Earned from Timewalking activities; persists across expansions",
         category = "Special"
     },
-    
-    [3056] = { -- Kej
-        id = 3056,
-        name = "Kej",
-        icon = "Interface\\Icons\\inv_misc_coin_01",
-        expansion = "TWW",
-        expansionName = "The War Within",
-        patch = "11.0.0",
-        minVersion = 110000,
-        maxQuantity = 0, -- No limit
-        isTracked = false,
-        description = "Currency of the earthen",
-        category = "Faction"
-    },
-    
-    [3220] = { -- Vintage Kaja'Cola Can
-        id = 3220,
-        name = "Vintage Kaja'Cola Can",
-        icon = "Interface\\Icons\\inv_drink_24",
-        expansion = "TWW",
-        expansionName = "The War Within",
-        patch = "11.1.0",
-        minVersion = 110100,
-        maxQuantity = 100,
-        isTracked = false,
-        description = "Collectible vintage cola cans",
-        category = "Collectible"
-    },
-    
-    [2803] = { -- Undercoin
-        id = 2803,
-        name = "Undercoin",
-        icon = "Interface\\Icons\\inv_misc_coin_02",
-        expansion = "TWW",
-        expansionName = "The War Within",
-        patch = "11.2.0",
-        minVersion = 110200,
-        maxQuantity = 0,
-        isTracked = false,
-        description = "Currency of the underground markets",
-        category = "Faction"
-    },
-    
-    [3284] = { -- Weathered Ethereal Crest
-        id = 3284,
-        name = "Weathered Ethereal Crest",
-        icon = "Interface\\Icons\\inv_misc_enchantedscroll",
-        expansion = "TWW",
-        expansionName = "The War Within",
-        patch = "11.2.0",
-        minVersion = 110200,
-        maxQuantity = 90,
-        isTracked = false,
-        description = "Upgrade material for high-level gear",
-        category = "Upgrade Materials"
-    },
-    
-    -- Dragonflight currencies (for testing cross-expansion support)
-    [2815] = { -- Resonance Crystals
-        id = 2815,
-        name = "Resonance Crystals",
-        icon = "Interface\\Icons\\inv_misc_gem_pearl_13",
-        expansion = "DRAGONFLIGHT",
-        expansionName = "Dragonflight",
-        patch = "10.0.0",
-        minVersion = 100000,
-        maxQuantity = 2000,
-        isTracked = false,
-        description = "Crystals that resonate with dragon magic",
-        category = "Upgrade Materials"
-    }
 }
 
 -- Currency categories for organization
@@ -326,7 +242,7 @@ CurrencyConstants.UI = {
 
 -- Default currency settings
 CurrencyConstants.Defaults = {
-    PRIMARY_CURRENCY = 3008, -- Valorstones as primary test currency
+    PRIMARY_CURRENCY = 1166, -- Timewarped Badge as stable, long-lived default
     TRACKING_ENABLED = true,
     MAX_HISTORY_DAYS = 365, -- Keep 1 year of history by default
     UPDATE_THROTTLE_MS = 100 -- Minimum time between updates in milliseconds

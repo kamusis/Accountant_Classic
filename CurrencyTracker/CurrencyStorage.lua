@@ -324,7 +324,7 @@ local isInitialized = false
 
 -- Constants for data structure
 local CURRENCY_VERSION = "3.00.00"
-local DEFAULT_CURRENCY = 3008 -- Valorstones
+local DEFAULT_CURRENCY = 1166 -- Timewarped Badge
 
 -- Time period constants (matching existing addon structure)
 local TIME_PERIODS = {
