@@ -141,6 +141,7 @@ function EventHandler:RegisterEvents()
     local events = {
         "ADDON_LOADED",
         "PLAYER_LOGIN",
+        "PLAYER_ENTERING_WORLD",
         "PLAYER_LOGOUT",
         "PLAYER_REGEN_DISABLED", -- Entering combat
         "PLAYER_REGEN_ENABLED",  -- Leaving combat
@@ -203,6 +204,8 @@ function EventHandler:OnEvent(event, ...)
         self:OnAddonLoaded()
     elseif event == "PLAYER_LOGIN" then
         self:OnPlayerLogin()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        self:OnPlayerEnteringWorld(...)
     elseif event == "PLAYER_LOGOUT" then
         self:OnPlayerLogout()
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -233,6 +236,71 @@ function EventHandler:OnPlayerLogin()
     if CurrencyTracker.Storage and CurrencyTracker.Storage.ShiftCurrencyLogs then
         CurrencyTracker.Storage:ShiftCurrencyLogs()
     end
+end
+
+-- Handle entering world (fires after login UI is ready); better timing for live currency reads
+function EventHandler:OnPlayerEnteringWorld(isInitialLogin, isReloadingUi)
+    -- Robust baseline: prime all account-discovered currencies once UI is fully ready.
+    self:PrimeDiscoveredCurrenciesOnLogin()
+end
+
+-- Prime baseline for all currencies known in the account-wide discovery list at login time.
+-- This avoids relying on the first event to backfill baselines for previously discovered ids.
+-- Behavior:
+-- - For each discovered currency id:
+--   - Read live amount (0 if unknown).
+--   - If Total is empty and live > 0, write Total["BaselinePrime"].In += live (one-time).
+--   - Prime in-memory snapshot and mark as primed to prevent duplicate baseline work.
+-- Notes:
+-- - We intentionally do NOT write any records into Day/Week/Month/Year.
+-- - If live == 0, we simply ensure structures exist; we do not write a zero baseline row.
+function EventHandler:PrimeDiscoveredCurrenciesOnLogin()
+    if not (CurrencyTracker and CurrencyTracker.Storage and CurrencyTracker.Storage.GetDiscoveredCurrencies) then
+        -- Always print a summary even if nothing ran
+        local msg = string.format("[AC CT] Login prime summary: checked=%d, primed=%d (>0 live), ensured=%d (0 live)", 0, 0, 0)
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            DEFAULT_CHAT_FRAME:AddMessage(msg, 0.2, 1.0, 0.2)
+        else
+            print(msg)
+        end
+        CurrencyTracker:LogDebug(msg)
+        return
+    end
+    local discovered = CurrencyTracker.Storage:GetDiscoveredCurrencies() or {}
+    local checked, primed, ensured = 0, 0, 0
+    for id, _ in pairs(discovered) do
+        local currencyID = tonumber(id)
+        if currencyID then
+            checked = checked + 1
+            local liveAmt = self:GetCurrentCurrencyAmount(currencyID) or 0
+            if IsCurrencyTotalEmpty(currencyID) and liveAmt > 0 then
+                PrimeBaselineTotalOnly(currencyID, liveAmt)
+                primed = primed + 1
+                CurrencyTracker:LogDebug("[Login Prime] id=%s baseline=%s (from live)", tostring(currencyID), tostring(liveAmt))
+            else
+                -- Ensure structures exist for consistency even if live is 0
+                if CurrencyTracker.Storage and CurrencyTracker.Storage.InitializeCurrencyData then
+                    CurrencyTracker.Storage:InitializeCurrencyData(currencyID)
+                end
+                ensured = ensured + 1
+            end
+            -- Prime in-memory snapshot so subsequent diffs are based on live
+            lastCurrencyAmounts[currencyID] = liveAmt
+            -- IMPORTANT: Only mark as primed when we actually had a positive live and (possibly) wrote baseline.
+            -- If live==0, leave it unprimed so the first real event can perform baseline inference correctly.
+            if liveAmt > 0 then
+                primedCurrencies[currencyID] = true
+            end
+        end
+    end
+    -- Always print a concise summary, even if nothing was discovered/primed yet
+    local msg = string.format("[AC CT] Login prime summary: checked=%d, primed=%d (>0 live), ensured=%d (0 live)", checked, primed, ensured)
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(msg, 0.2, 1.0, 0.2)
+    else
+        print(msg)
+    end
+    CurrencyTracker:LogDebug(msg)
 end
 
 -- Handle player logout
@@ -316,6 +384,10 @@ end
 function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityChange, quantityGainSource, quantityLostSource)
     if not currencyID then return end
 
+    -- Normalize id to numeric to avoid mixed key types between discovery/storage/event paths
+    local _numId = tonumber(currencyID)
+    if _numId then currencyID = _numId end
+
     -- Parity with gold: ensure rollover before logging changes
     if CurrencyTracker.Storage and CurrencyTracker.Storage.ShiftCurrencyLogs then
         CurrencyTracker.Storage:ShiftCurrencyLogs()
@@ -350,28 +422,52 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
         end
     end
 
+    -- Safety baseline guard: if Total is empty and we have a concrete change, write inferred baseline
+    -- regardless of in-memory primed flag. This handles ordering where an early event may arrive
+    -- before login priming, and ensures Total gets its one-time baseline when appropriate.
+    if quantityChange ~= nil and IsCurrencyTotalEmpty and IsCurrencyTotalEmpty(currencyID) then
+        local effNew = newQuantity
+        if effNew == nil then
+            effNew = self:GetCurrentCurrencyAmount(currencyID)
+        end
+        local inferred = (effNew or 0) - (quantityChange or 0)
+        if inferred and inferred > 0 then
+            PrimeBaselineTotalOnly(currencyID, inferred)
+            CurrencyTracker:LogDebug("Baseline guard applied at event: id=%s inferred=%s (new=%s chg=%s)", tostring(currencyID), tostring(inferred), tostring(effNew), tostring(quantityChange))
+        end
+    end
+
     -- Enhanced baseline priming on first sighting
     if not primedCurrencies[currencyID] then
         if quantityChange == nil then
-            -- Legacy path: no explicit change provided, just prime in-memory and skip logging
-            lastCurrencyAmounts[currencyID] = newQuantity or 0
+            -- No explicit change provided: prime baseline using live amount as a one-time Total-only baseline,
+            -- then prime in-memory and skip logging (we cannot determine a delta safely here).
+            local liveAmt = newQuantity
+            if liveAmt == nil then
+                liveAmt = self:GetCurrentCurrencyAmount(currencyID)
+            end
+            if (liveAmt or 0) > 0 and IsCurrencyTotalEmpty(currencyID) then
+                if PrimeBaselineTotalOnly(currencyID, liveAmt) then
+                    CurrencyTracker:LogDebug("Primed Total baseline at first sight (no change arg) for id=%s amount=%s", tostring(currencyID), tostring(liveAmt))
+                end
+            end
+            -- Ensure dynamic discovery so future logins include this currency in startup priming
+            if CurrencyTracker.Storage and CurrencyTracker.Storage.SaveDiscoveredCurrency then
+                CurrencyTracker.Storage:SaveDiscoveredCurrency(currencyID)
+            end
+            lastCurrencyAmounts[currencyID] = liveAmt or 0
             primedCurrencies[currencyID] = true
             CurrencyTracker:LogDebug("Primed currency %s at %s (no transaction recorded)", tostring(currencyID), tostring(lastCurrencyAmounts[currencyID]))
             return
         else
-            -- Modern path: first event comes with a change value; infer baseline and prime Total once if empty
-            -- Some clients omit the post-gain total ('quantity' is nil). In that case, fetch live amount.
-            local effectiveNew = newQuantity
-            if effectiveNew == nil then
-                effectiveNew = self:GetCurrentCurrencyAmount(currencyID)
-            end
-            local inferredBaseline = (effectiveNew or 0) - (quantityChange or 0)
-            if inferredBaseline and inferredBaseline > 0 and IsCurrencyTotalEmpty(currencyID) then
-                if PrimeBaselineTotalOnly(currencyID, inferredBaseline) then
-                    CurrencyTracker:LogDebug("Primed Total baseline for id=%s amount=%s (inferred)", tostring(currencyID), tostring(inferredBaseline))
-                end
+            -- Modern path: first event comes with a change value.
+            -- Baseline (if needed) is already handled by the event-time safety guard above.
+            -- Ensure dynamic discovery so future logins include this currency in startup priming
+            if CurrencyTracker.Storage and CurrencyTracker.Storage.SaveDiscoveredCurrency then
+                CurrencyTracker.Storage:SaveDiscoveredCurrency(currencyID)
             end
             -- Update in-memory snapshot so subsequent diffs are correct; proceed to log this delta below
+            local effectiveNew = (newQuantity ~= nil) and newQuantity or self:GetCurrentCurrencyAmount(currencyID)
             lastCurrencyAmounts[currencyID] = effectiveNew or 0
             primedCurrencies[currencyID] = true
         end
@@ -506,14 +602,10 @@ function EventHandler:InitializeCurrencyAmounts()
 
         for currencyID in pairs(supported) do
             local currentAmount = self:GetCurrentCurrencyAmount(currencyID)
-            -- Prime baseline without recording a transaction
+            -- Snapshot only; baseline priming is handled in OnPlayerEnteringWorld and event-time guard.
             lastCurrencyAmounts[currencyID] = currentAmount or 0
-            primedCurrencies[currencyID] = true
-            -- If storage has no Total data yet and the live amount is positive, prime Total once
-            if (currentAmount or 0) > 0 and IsCurrencyTotalEmpty(currencyID) then
-                PrimeBaselineTotalOnly(currencyID, currentAmount)
-                CurrencyTracker:LogDebug("Primed Total baseline at login for id=%s amount=%s", tostring(currencyID), tostring(currentAmount))
-            end
+            -- Do NOT mark primed here; we want first event to be eligible for inference when live==0,
+            -- and OnPlayerEnteringWorld() will mark as primed when live>0.
         end
     end
 end

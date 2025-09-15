@@ -21,6 +21,39 @@ local function SafeLogError(fmt, ...)
             print("[Accountant_Classic][Error] " .. msg)
         end
     end
+
+    -- Normalize discovery keys: move string numeric keys (e.g., "3008") to numeric keys (3008)
+    do
+        local moved = 0
+        local toMove = {}
+        for k, v in pairs(globalDiscovery) do
+            if type(k) == "string" then
+                local num = tonumber(k)
+                if num then
+                    -- If numeric slot not present, schedule move; otherwise shallow-merge later
+                    table.insert(toMove, { from = k, to = num, val = v })
+                end
+            end
+        end
+        for _, m in ipairs(toMove) do
+            if globalDiscovery[m.to] == nil then
+                globalDiscovery[m.to] = {}
+            end
+            local tgt = globalDiscovery[m.to]
+            for kk, vv in pairs(m.val) do
+                if tgt[kk] == nil then
+                    tgt[kk] = vv
+                end
+            end
+            if globalDiscovery[m.from] ~= nil then
+                globalDiscovery[m.from] = nil
+                moved = moved + 1
+            end
+        end
+        if moved > 0 then
+            SafeLogDebug("Normalized %d discovery keys from string to numeric", moved)
+        end
+    end
 end
 
 -- Define SafeLogDebug early so calls before logger init don't error
@@ -919,6 +952,9 @@ end
 -- Idempotent: safely merges/updates existing entry without clearing user-set flags.
 function Storage:SaveDiscoveredCurrency(currencyID)
     if not currencyID then return false end
+    local n = tonumber(currencyID)
+    if not n then return false end
+    currencyID = n
     -- Ensure global table exists (Accountant_Classic_CurrencyDB)
     _G.Accountant_Classic_CurrencyDB = _G.Accountant_Classic_CurrencyDB or {}
     _G.Accountant_Classic_CurrencyDB.currencyDiscovery = _G.Accountant_Classic_CurrencyDB.currencyDiscovery or {}
