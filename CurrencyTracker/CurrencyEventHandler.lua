@@ -360,14 +360,19 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
             return
         else
             -- Modern path: first event comes with a change value; infer baseline and prime Total once if empty
-            local inferredBaseline = (newQuantity or 0) - (quantityChange or 0)
+            -- Some clients omit the post-gain total ('quantity' is nil). In that case, fetch live amount.
+            local effectiveNew = newQuantity
+            if effectiveNew == nil then
+                effectiveNew = self:GetCurrentCurrencyAmount(currencyID)
+            end
+            local inferredBaseline = (effectiveNew or 0) - (quantityChange or 0)
             if inferredBaseline and inferredBaseline > 0 and IsCurrencyTotalEmpty(currencyID) then
                 if PrimeBaselineTotalOnly(currencyID, inferredBaseline) then
                     CurrencyTracker:LogDebug("Primed Total baseline for id=%s amount=%s (inferred)", tostring(currencyID), tostring(inferredBaseline))
                 end
             end
             -- Update in-memory snapshot so subsequent diffs are correct; proceed to log this delta below
-            lastCurrencyAmounts[currencyID] = newQuantity or 0
+            lastCurrencyAmounts[currencyID] = effectiveNew or 0
             primedCurrencies[currencyID] = true
         end
     end
