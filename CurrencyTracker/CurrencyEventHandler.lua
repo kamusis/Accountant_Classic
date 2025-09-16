@@ -26,6 +26,7 @@ local batchTimer = nil
 local inCombat = false
 local primedCurrencies = {}
 local bagDebounceTimer = nil
+local didLoginPrime = false
 
 -- Helpers: baseline priming directly via SavedVariables without changing Storage API
 -- NOTE: We intentionally operate only on the Total period to avoid skewing time buckets.
@@ -236,12 +237,26 @@ function EventHandler:OnPlayerLogin()
     if CurrencyTracker.Storage and CurrencyTracker.Storage.ShiftCurrencyLogs then
         CurrencyTracker.Storage:ShiftCurrencyLogs()
     end
+    -- Reset session guard so login priming can run exactly once per session
+    didLoginPrime = false
 end
 
 -- Handle entering world (fires after login UI is ready); better timing for live currency reads
 function EventHandler:OnPlayerEnteringWorld(isInitialLogin, isReloadingUi)
-    -- Robust baseline: prime all account-discovered currencies once UI is fully ready.
+    -- Run baseline priming only once per session after the UI is fully ready.
+    -- PLAYER_ENTERING_WORLD fires on zoning and instances, so guard it strictly.
+    if didLoginPrime then
+        return
+    end
+    -- Prefer Blizzard flags when present: only on true initial login and not on UI reloads.
+    if isInitialLogin == false then
+        return
+    end
+    if isReloadingUi == true then
+        return
+    end
     self:PrimeDiscoveredCurrenciesOnLogin()
+    didLoginPrime = true
 end
 
 -- Prime baseline for all currencies known in the account-wide discovery list at login time.
