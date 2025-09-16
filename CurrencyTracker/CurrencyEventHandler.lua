@@ -560,7 +560,15 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
         if change > 0 and C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
             local ok, ci = pcall(C_CurrencyInfo.GetCurrencyInfo, currencyID)
             if ok and type(ci) == "table" then
-                local cap = (ci.maxQuantity ~= nil and ci.maxQuantity) or ci.totalMax
+                -- Explicit cap selection: prefer maxQuantity if > 0, else totalMax if > 0
+                local cap
+                if ci.maxQuantity and ci.maxQuantity > 0 then
+                    cap = ci.maxQuantity
+                elseif ci.totalMax and ci.totalMax > 0 then
+                    cap = ci.totalMax
+                else
+                    cap = nil
+                end
                 if cap and cap > 0 then
                     -- Load per-character settings (defaults: enable=true, cap_percent=0.90, time=3.0, fade=0.8)
                     local enable, threshold, tVisible, tFade = true, 0.90, 3.0, 0.8
@@ -582,6 +590,15 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
                     if enable then
                         local afterAmt = (newQuantity ~= nil) and newQuantity or (old + change)
                         local ratio = afterAmt / cap
+                        -- Extra diagnostics when debug mode is ON
+                        if CurrencyTracker and CurrencyTracker.DEBUG_MODE then
+                            local maxQty = tostring(ci.maxQuantity)
+                            local totMax = tostring(ci.totalMax)
+                            local maxWk = tostring(ci.maxWeeklyQuantity)
+                            local canWk = tostring(ci.canEarnPerWeek)
+                            print(string.format("[AC CT][NearCapDbg] id=%s after=%s cap=%s ratio=%.4f thr=%.4f maxQ=%s totMax=%s wkMax=%s canWk=%s",
+                                tostring(currencyID), tostring(afterAmt), tostring(cap), ratio, threshold, maxQty, totMax, maxWk, canWk))
+                        end
                         if ratio >= threshold then
                             local name = ci.name or ("Currency " .. tostring(currencyID))
                             -- Localize name via AceLocale if available
