@@ -248,6 +248,205 @@ CurrencyConstants.Defaults = {
     UPDATE_THROTTLE_MS = 100 -- Minimum time between updates in milliseconds
 }
 
+-- Curated currency allowlist (mirrored from SavedInstances/Modules/Currency.lua)
+-- This list is used for optional display filtering to avoid internal/duplicate IDs.
+-- Note: Keep comments to preserve human-readable labels; live API data will supersede names/icons.
+CurrencyConstants.CurrencyWhitelist = {
+    81,   -- Epicurean Award
+    515,  -- Darkmoon Prize Ticket
+    2588, -- Riders of Azeroth Badge
+
+    -- Wrath of the Lich King
+    241,  -- Champion's Seal
+
+    -- Cataclysm
+    391,  -- Tol Barad Commendation
+    416,  -- Mark of the World Tree
+
+    -- Mists of Pandaria
+    402,  -- Ironpaw Token
+    697,  -- Elder Charm of Good Fortune
+    738,  -- Lesser Charm of Good Fortune
+    752,  -- Mogu Rune of Fate
+    776,  -- Warforged Seal
+    777,  -- Timeless Coin
+    789,  -- Bloody Coin
+
+    -- Warlords of Draenor
+    823,  -- Apexis Crystal
+    824,  -- Garrison Resources
+    994,  -- Seal of Tempered Fate
+    1101, -- Oil
+    1129, -- Seal of Inevitable Fate
+    1149, -- Sightless Eye
+    1155, -- Ancient Mana
+    1166, -- Timewarped Badge
+
+    -- Legion
+    1220, -- Order Resources
+    1226, -- Nethershards
+    1273, -- Seal of Broken Fate
+    1275, -- Curious Coin
+    1299, -- Brawler's Gold
+    1314, -- Lingering Soul Fragment
+    1342, -- Legionfall War Supplies
+    1501, -- Writhing Essence
+    1508, -- Veiled Argunite
+    1533, -- Wakening Essence
+
+    -- Battle for Azeroth
+    1710, -- Seafarer's Dubloon
+    1580, -- Seal of Wartorn Fate
+    1560, -- War Resources
+    1587, -- War Supplies
+    1716, -- Honorbound Service Medal
+    1717, -- 7th Legion Service Medal
+    1718, -- Titan Residuum
+    1721, -- Prismatic Manapearl
+    1719, -- Corrupted Memento
+    1755, -- Coalescing Visions
+    1803, -- Echoes of Ny'alotha
+
+    -- Shadowlands
+    1754, -- Argent Commendation
+    1191, -- Valor
+    1602, -- Conquest
+    1792, -- Honor
+    1822, -- Renown
+    1767, -- Stygia
+    1828, -- Soul Ash
+    1810, -- Redeemed Soul
+    1813, -- Reservoir Anima
+    1816, -- Sinstone Fragments
+    1819, -- Medallion of Service
+    1820, -- Infused Ruby
+    1885, -- Grateful Offering
+    1889, -- Adventure Campaign Progress
+    1904, -- Tower Knowledge
+    1906, -- Soul Cinders
+    1931, -- Cataloged Research
+    1977, -- Stygian Ember
+    1979, -- Cyphers of the First Ones
+    2009, -- Cosmic Flux
+    2000, -- Motes of Fate
+
+    -- Dragonflight
+    2003, -- Dragon Isles Supplies
+    2245, -- Flightstones
+    2123, -- Bloody Tokens
+    2797, -- Trophy of Strife
+    2045, -- Dragon Glyph Embers
+    2118, -- Elemental Overflow
+    2122, -- Storm Sigil
+    2409, -- Whelpling Crest Fragment Tracker [DNT]
+    2410, -- Drake Crest Fragment Tracker [DNT]
+    2411, -- Wyrm Crest Fragment Tracker [DNT]
+    2412, -- Aspect Crest Fragment Tracker [DNT]
+    2413, -- 10.1 Professions - Personal Tracker - S2 Spark Drops (Hidden)
+    2533, -- Renascent Shadowflame
+    2594, -- Paracausal Flakes
+    2650, -- Emerald Dewdrop
+    2651, -- Seedbloom
+    2777, -- Dream Infusion
+    2796, -- Renascent Dream
+    2706, -- Whelpling's Dreaming Crest
+    2707, -- Drake's Dreaming Crest
+    2708, -- Wyrm's Dreaming Crest
+    2709, -- Aspect's Dreaming Crest
+    2774, -- 10.2 Professions - Personal Tracker - S3 Spark Drops (Hidden)
+    2657, -- Mysterious Fragment
+    2912, -- Renascent Awakening
+    2806, -- Whelpling's Awakened Crest
+    2807, -- Drake's Awakened Crest
+    2809, -- Wyrm's Awakened Crest
+    2812, -- Aspect's Awakened Crest
+    2800, -- 10.2.6 Professions - Personal Tracker - S4 Spark Drops (Hidden)
+    3010, -- 10.2.6 Rewards - Personal Tracker - S4 Dinar Drops (Hidden)
+    2778, -- Bronze
+
+    -- The War Within
+    3089, -- Residual Memories
+    2803, -- Undercoin
+    2815, -- Resonance Crystals
+    3028, -- Restored Coffer Key
+    3056, -- Kej
+    3008, -- Valorstones
+    2813, -- Harmonized Silk
+    2914, -- Weathered Harbinger Crest
+    2915, -- Carved Harbinger Crest
+    2916, -- Runed Harbinger Crest
+    2917, -- Gilded Harbinger Crest
+    3023, -- 11.0 Professions - Personal Tracker - S1 Spark Drops (Hidden)
+    3100, -- Bronze Celebration Token
+    3090, -- Flame-Blessed Iron
+    3218, -- Empty Kaja'Cola Can
+    3220, -- Vintage Kaja'Cola Can
+    3226, -- Market Research
+    3116, -- Essence of Kaja'mite
+    3107, -- Weathered Undermine Crest
+    3108, -- Carved Undermine Crest
+    3109, -- Runed Undermine Crest
+    3110, -- Gilded Undermine Crest
+    3132, -- 11.1 Professions - Personal Tracker - S2 Spark Drops (Hidden)
+    3149, -- Displaced Corrupted Mementos
+    3278, -- Ethereal Strands
+    3303, -- Untethered Coin
+    3356, -- Untainted Mana-Crystals
+    3269, -- Ethereal Voidsplinter
+    3284, -- Weathered Ethereal Crest
+    3286, -- Carved Ethereal Crest
+    3288, -- Runed Ethereal Crest
+    3290, -- Gilded Ethereal Crest
+    3141, -- Starlight Spark Dust
+}
+
+-- Additional metadata derived from SavedInstances for special handling and display overrides
+CurrencyConstants.SpecialCurrency = {
+    [1129] = { -- WoD - Seal of Tempered Fate
+        weeklyMax = 3,
+        earnByQuest = {
+            36058, 36054, 37454, 37455, 36056, 37456, 37457, 36057, 37458, 37459, 36055, 37452, 37453,
+        },
+    },
+    [1273] = { -- LEG - Seal of Broken Fate
+        weeklyMax = 3,
+        earnByQuest = { 43895, 43896, 43897, 43892, 43893, 43894, 43510, 47851, 47864, 47865 },
+    },
+    [1580] = { -- BfA - Seal of Wartorn Fate
+        weeklyMax = 2,
+        earnByQuest = { 52834, 52838, 52835, 52839, 52837, 52840 },
+    },
+    [1755] = { -- BfA - Coalescing Visions
+        relatedItem = { id = 173363 }, -- Vessel of Horrific Visions
+    },
+    [3028] = { -- Restored Coffer Key
+        relatedItem = { id = 245653 }, -- Coffer Key Shard
+    },
+}
+
+-- Optional name and texture overrides for tracker/UI (values in English)
+CurrencyConstants.OverrideName = {
+    [2409] = "Loot Whelpling Crest Fragment",
+    [2410] = "Loot Drake Crest Fragment",
+    [2411] = "Loot Wyrm Crest Fragment",
+    [2412] = "Loot Aspect Crest Fragment",
+    [2413] = "Loot Spark of Shadowflame",
+    [2774] = "Loot Spark of Dreams",
+    [2800] = "Loot Spark of Awakening",
+    [3010] = "Loot Antique Bronze Bullion",
+    [3023] = "Loot Spark of Omens",
+    [3132] = "Loot Spark of Fortunes",
+}
+
+CurrencyConstants.OverrideTexture = {
+    [2413] = 5088829,
+    [2774] = 5341573,
+    [2800] = 4693222,
+    [3010] = 4555657,
+    [3023] = 5929759,
+    [3132] = 5929757,
+}
+
 -- Export the module to CurrencyTracker namespace
 CurrencyTracker = CurrencyTracker or {}
 CurrencyTracker.Constants = CurrencyConstants

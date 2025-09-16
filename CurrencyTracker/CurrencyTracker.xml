@@ -6,8 +6,8 @@
     <Script file="CurrencyStorage.lua"/>
     <Script file="CurrencyDataManager.lua"/>
     <Script file="CurrencyEventHandler.lua"/>
-    <!-- UI components are intentionally disabled for headless mode -->
-    <!-- <Script file="CurrencyUIController.lua"/> -->
-    <!-- <Script file="CurrencyDisplayIntegration.lua"/> -->
+    <Include file="CurrencyTemplate.xml"/>
+    <Include file="CurrencyFrame.xml"/>
+    <Script file="CurrencyFrame.lua"/>
     <Script file="CurrencyCore.lua"/>
 </Ui>

@@ -249,3 +249,10 @@ L["CT_LineTotalMax"] = "TotalMax"
 L["CT_Unlimited"] = "Unlimited"
 -- Near-cap warning
 L["CT_WarnNearCap"] = "Warning: %s has reached or exceeded 90%% of total cap (%d)"
+
+-- Currency Tracker headers (UI)
+L["CT_Header_Currency"] = "Currency"
+L["CT_Header_TotalMax"] = "Cap"
+L["CT_Header_Income"]   = "Income"
+L["CT_Header_Outgoing"] = "Outgoing"
+L["CT_Header_Net"]      = "Net"

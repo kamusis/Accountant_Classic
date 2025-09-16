@@ -19,6 +19,24 @@ local function CT_GetL()
     return L
 end
 
+-- Open the Currency UI window using the UI module if available.
+-- This function does not modify any CLI logic; it simply delegates to the UI layer.
+function CurrencyTracker:OpenUI()
+    local ui = self.CurrencyFrame or self.UIController
+    if ui then
+        if type(ui.Show) == "function" then
+            ui:Show()
+            return
+        elseif type(ui.Toggle) == "function" then
+            ui:Toggle(true)
+            return
+        end
+    end
+    -- Fallback: friendly placeholder; keep behavior read-only per design.
+    print("[AC CT] Currency UI placeholder: showing all currencies for this session in chat.")
+    self:PrintMultipleCurrencies("Session", false)
+end
+
 -- Create the main CurrencyTracker namespace
 CurrencyTracker = CurrencyTracker or {}
 
@@ -596,6 +614,13 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
         end
     elseif cmd:find("^status%s*$") then
         CurrencyTracker:ShowStatus()
+    elseif cmd:find("^ui%s*$") then
+        -- Open standalone Currency UI window (design doc: UI only renders; no logic duplication)
+        if CurrencyTracker and CurrencyTracker.OpenUI then
+            CurrencyTracker:OpenUI()
+        else
+            print("[AC CT] UI not available yet. Please ensure CurrencyFrame is loaded.")
+        end
     elseif cmd:find("^get%-currency%-info") then
         -- Test helper: dump all fields returned by C_CurrencyInfo.GetCurrencyInfo for a given currency ID
         -- Usage: /ct get-currency-info <id>
@@ -651,6 +676,43 @@ SlashCmdList["CURRENCYTRACKER"] = function(msg)
             end
         end
         print("=== End Currency Info ===")
+    elseif cmd:find("^set%s+whitelist") then
+        -- /ct set whitelist [on|off]
+        local sub = cmd:gsub("^set%s+whitelist%s*", "")
+        sub = sub:gsub("^%s+", "")
+
+        if not EnsureSavedVariablesStructure or not GetCurrentServerAndCharacter then
+            print("Storage helpers unavailable; cannot save settings.")
+            return
+        end
+        if not EnsureSavedVariablesStructure() then
+            print("Failed to initialize storage structure.")
+            return
+        end
+        local server, character = GetCurrentServerAndCharacter()
+        local sv = _G.Accountant_ClassicSaveData
+        if not (sv and sv[server] and sv[server][character]) then
+            print("No character storage available.")
+            return
+        end
+        local charData = sv[server][character]
+        charData.currencyOptions = charData.currencyOptions or {}
+
+        local current = charData.currencyOptions.whitelistFilter
+        if current == nil then current = true end -- default ON
+
+        if sub == "on" or sub == "true" then
+            charData.currencyOptions.whitelistFilter = true
+            print("Whitelist filter: ON (applies to /ct show and /ct show-all)")
+        elseif sub == "off" or sub == "false" then
+            charData.currencyOptions.whitelistFilter = false
+            print("Whitelist filter: OFF (all currencies eligible; tracked filter still applies)")
+        elseif sub == nil or sub == "" then
+            print(string.format("Whitelist filter is currently: %s", (current and "ON" or "OFF")))
+            print("Usage: /ct set whitelist on|off")
+        else
+            print("Usage: /ct set whitelist on|off")
+        end
     elseif cmd:find("^set%-paras%s+near%-cap%-warning") then
         -- Configure near-cap warning parameters (per-character persistent settings)
         -- Usage:
@@ -988,6 +1050,42 @@ function CurrencyTracker:ShowCurrencyData(command)
         return
     end
 
+    -- Whitelist filter (config-gated, default ON). Applies to /ct show.
+    local function CT_IsWhitelistEnabled()
+        if not EnsureSavedVariablesStructure or not GetCurrentServerAndCharacter then return true end
+        local server, character = GetCurrentServerAndCharacter()
+        local sv = _G.Accountant_ClassicSaveData
+        if not (sv and sv[server] and sv[server][character]) then return true end
+        local charData = sv[server][character]
+        local opt = charData.currencyOptions and charData.currencyOptions.whitelistFilter
+        if opt == nil then return true end
+        return opt and true or false
+    end
+
+    if CT_IsWhitelistEnabled() then
+        local wl = CurrencyTracker.Constants and CurrencyTracker.Constants.CurrencyWhitelist or nil
+        if wl and #wl > 0 then
+            local wlset = {}
+            for _, id in ipairs(wl) do wlset[id] = true end
+            if not wlset[currencyID] then
+                print(string.format("Currency %d is not in whitelist (filter ON); hiding from /ct show", currencyID))
+                return
+            end
+        end
+    end
+
+    -- Tracked filter: respect discovery tracked=false for single show as well
+    local discovered = {}
+    if self.Storage and self.Storage.GetDiscoveredCurrencies then
+        discovered = self.Storage:GetDiscoveredCurrencies() or {}
+    end
+    local meta = discovered[currencyID]
+    local isTracked = (meta == nil) or (meta.tracked ~= false)
+    if not isTracked then
+        print(string.format("Currency %d is marked untracked; use /ct discover track %d on to include", currencyID, currencyID))
+        return
+    end
+
     local data = nil
     if self.Storage and self.Storage.GetCurrencyData then
         data = self.Storage:GetCurrencyData(currencyID, timeframe)
@@ -1114,8 +1212,10 @@ function CurrencyTracker:PrintCurrencyData(currencyID, timeframe, data)
     print("=========================")
 end
 
--- Print a summary across all currencies for a timeframe
-function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
+-- Collect rows for multiple currencies using the exact same logic as CLI printing
+-- Returns an array of rows: { id, name, income, outgoing, net, totalMax }
+function CurrencyTracker:CollectMultipleCurrencies(timeframe, verbose)
+    local rows = {}
     local currencies = {}
     if self.Storage and self.Storage.GetAvailableCurrencies then
         currencies = self.Storage:GetAvailableCurrencies() or {}
@@ -1124,6 +1224,84 @@ function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
     end
 
     if not currencies or #currencies == 0 then
+        return rows
+    end
+
+    -- Discovery metadata for tracked filter
+    local discovered = {}
+    if self.Storage and self.Storage.GetDiscoveredCurrencies then
+        discovered = self.Storage:GetDiscoveredCurrencies() or {}
+    end
+
+    -- Read whitelist toggle (default ON)
+    local whitelistEnabled = true
+    if EnsureSavedVariablesStructure and GetCurrentServerAndCharacter then
+        local server, character = GetCurrentServerAndCharacter()
+        local sv = _G.Accountant_ClassicSaveData
+        if sv and sv[server] and sv[server][character] then
+            local charData = sv[server][character]
+            local opt = charData.currencyOptions and charData.currencyOptions.whitelistFilter
+            if opt ~= nil then whitelistEnabled = opt and true or false end
+        end
+    end
+    local wlset = nil
+    if whitelistEnabled then
+        local wl = CurrencyTracker.Constants and CurrencyTracker.Constants.CurrencyWhitelist or nil
+        if wl and #wl > 0 then
+            wlset = {}
+            for _, id in ipairs(wl) do wlset[id] = true end
+        end
+    end
+
+    for _, cid in ipairs(currencies) do
+        -- Apply whitelist first (if enabled)
+        if not wlset or wlset[cid] then
+            local meta = discovered[cid]
+            local isTracked = (meta == nil) or (meta.tracked ~= false)
+            if verbose or isTracked then
+                local data = self.Storage and self.Storage:GetCurrencyData(cid, timeframe) or nil
+                local info = self.DataManager and self.DataManager:GetCurrencyInfo(cid) or nil
+                local name = (info and info.name) or ("Currency " .. tostring(cid))
+                if L and L[name] then name = L[name] end
+                local income = (data and data.income) or 0
+                local outgoing = (data and data.outgoing) or 0
+                local net = income - outgoing
+
+                -- Determine total max from live API
+                local totalMaxText = nil
+                if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+                    local ok, ci = pcall(C_CurrencyInfo.GetCurrencyInfo, cid)
+                    if ok and type(ci) == "table" then
+                        local lblUnlimited = (CT_GetL() and CT_GetL()["CT_Unlimited"]) or "Unlimited"
+                        local totalCap = (ci.maxQuantity ~= nil and ci.maxQuantity) or ci.totalMax
+                        totalMaxText = (totalCap and totalCap > 0) and tostring(totalCap) or lblUnlimited
+                    end
+                end
+
+                table.insert(rows, {
+                    id = cid,
+                    name = name,
+                    income = income,
+                    outgoing = outgoing,
+                    net = net,
+                    totalMax = totalMaxText,
+                })
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+        if a.name == b.name then return a.id < b.id end
+        return tostring(a.name) < tostring(b.name)
+    end)
+
+    return rows
+end
+
+-- Print a summary across all currencies for a timeframe
+function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
+    local rows = self:CollectMultipleCurrencies(timeframe, verbose)
+    if not rows or #rows == 0 then
         local LL = CT_GetL()
         local lblNoData = (LL and LL["CT_NoCurrencyData"]) or "No currency data available."
         print(lblNoData)
@@ -1135,54 +1313,23 @@ function CurrencyTracker:PrintMultipleCurrencies(timeframe, verbose)
         local headerFmt = (LL and LL["CT_AllCurrenciesHeader"]) or "=== All Currencies - %s ==="
         print(string.format(headerFmt, CT_GetTimeframeLabel(tostring(timeframe))))
     end
-    -- Default behavior: hide currencies explicitly marked as tracked=false in discovery metadata.
-    -- Use 'verbose' option to include all currencies regardless of tracked flag.
-    local discovered = {}
-    if self.Storage and self.Storage.GetDiscoveredCurrencies then
-        discovered = self.Storage:GetDiscoveredCurrencies() or {}
-    end
+    local LL = CT_GetL()
+    local lblIncome = (LL and LL["CT_LineIncome"]) or "Income"
+    local lblOutgoing = (LL and LL["CT_LineOutgoing"]) or "Outgoing"
+    local lblNet = (LL and LL["CT_LineNet"]) or "Net"
+    local lblTotalMax = (LL and LL["CT_LineTotalMax"]) or "TotalMax"
 
-    for _, cid in ipairs(currencies) do
-        local meta = discovered[cid]
-        local isTracked = (meta == nil) or (meta.tracked ~= false)
-        if verbose or isTracked then
-            local data = self.Storage and self.Storage:GetCurrencyData(cid, timeframe) or nil
-            local info = self.DataManager and self.DataManager:GetCurrencyInfo(cid) or nil
-            local name = (info and info.name) or ("Currency " .. tostring(cid))
-            if L and L[name] then name = L[name] end
-            local net = (data and data.net) or 0
-            local LL = CT_GetL()
-            local lblIncome = (LL and LL["CT_LineIncome"]) or "Income"
-            local lblOutgoing = (LL and LL["CT_LineOutgoing"]) or "Outgoing"
-            local lblNet = (LL and LL["CT_LineNet"]) or "Net"
-            local lblTotalMax = (LL and LL["CT_LineTotalMax"]) or "TotalMax"
-            
-            -- Build output string with max limits if available
-            local output = string.format("%s (id=%d): %s %d | %s %d | %s %s%d",
-                name,
-                cid,
-                lblIncome, (data and data.income) or 0,
-                lblOutgoing, (data and data.outgoing) or 0,
-                lblNet, (net >= 0 and "+" or ""),
-                net)
-            
-            -- Add total max if available from live API; weekly max removed per request
-            if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
-                local ok, ci = pcall(C_CurrencyInfo.GetCurrencyInfo, cid)
-                if ok and type(ci) == "table" then
-                    if CurrencyTracker.DEBUG_MODE then
-                        print(string.format("DEBUG: Currency %d - maxQuantity: %s (legacy totalMax: %s)",
-                            cid, tostring(ci.maxQuantity), tostring(ci.totalMax)))
-                    end
-                    local lblUnlimited = (LL and LL["CT_Unlimited"]) or "Unlimited"
-                    local totalCap = (ci.maxQuantity ~= nil and ci.maxQuantity) or ci.totalMax
-                    local totalMaxText = (totalCap and totalCap > 0) and tostring(totalCap) or lblUnlimited
-                    output = output .. string.format(" | %s %s", lblTotalMax, totalMaxText)
-                end
-            end
-            
-            print(output)
+    for _, row in ipairs(rows) do
+        local output = string.format("%s (id=%d): %s %d | %s %d | %s %s%d",
+            row.name, row.id,
+            lblIncome, row.income or 0,
+            lblOutgoing, row.outgoing or 0,
+            lblNet, ((row.net or 0) >= 0 and "+" or ""),
+            row.net or 0)
+        if row.totalMax then
+            output = output .. string.format(" | %s %s", lblTotalMax, row.totalMax)
         end
+        print(output)
     end
     print("=========================")
 end
@@ -1246,6 +1393,7 @@ function CurrencyTracker:ShowHelp()
     print("  Tip: append 'verbose' to include untracked currencies in the summary (e.g., /ct show-all total verbose)")
     print("  /ct debug on|off - Toggle in-game debug logging for currency events")
     print("  /ct status - Show system status")
+    print("  /ct ui - Open the standalone Currency Tracker UI window")
     print("  /ct discover list - List dynamically discovered currencies")
     print("  /ct discover track <id> [on|off] - Track or untrack a discovered currency")
     print("  /ct discover clear - Clear discovered currencies")
@@ -1260,5 +1408,6 @@ function CurrencyTracker:ShowHelp()
     print("  /ct meta show <timeframe> <id> - Inspect raw gain/lost source counts for a currency")
     print("  /ct get-currency-info <currencyId> - Dump C_CurrencyInfo fields for the given currency ID (debug)")
     print("  /ct set-paras near-cap-warning [enable=true|false] [cap_percent=0.9] [time_visible_sec=3] [fade_duration_sec=0.8]")
+    print("  /ct set whitelist [on|off] - Toggle whitelist filter for show/show-all (per-character, default ON)")
 end
 

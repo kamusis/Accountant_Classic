@@ -241,3 +241,10 @@ L["CT_LineTotalMax"] = "总上限"
 L["CT_Unlimited"] = "无限制"
 -- 逼近上限警告
 L["CT_WarnNearCap"] = "注意：%s 已经达到或超过总上限（%d）的90%%"
+
+-- 货币追踪器表头（UI）
+L["CT_Header_Currency"] = "货币"
+L["CT_Header_TotalMax"] = "总上限"
+L["CT_Header_Income"]   = "收入"
+L["CT_Header_Outgoing"] = "支出"
+L["CT_Header_Net"]      = "净值"
