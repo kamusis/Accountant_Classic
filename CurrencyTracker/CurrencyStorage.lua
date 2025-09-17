@@ -22,6 +22,40 @@ local function SafeLogError(fmt, ...)
         end
     end
 
+-- Apply a signed delta to Total-only using the canonical BaselinePrime source.
+-- Positive delta increases Total.BaselinePrime.In; negative delta increases Total.BaselinePrime.Out.
+-- This does NOT touch Session/Day/Week/Month/Year; only Total is adjusted.
+function Storage:ApplyTotalOnlyBaselineDelta(currencyID, delta)
+    if not currencyID or not delta or delta == 0 then
+        return false
+    end
+
+    if not EnsureSavedVariablesStructure() then
+        return false
+    end
+
+    -- Ensure currency data exists (creates empty periods including Total)
+    self:InitializeCurrencyData(currencyID)
+
+    local server, character = GetCurrentServerAndCharacter()
+    local currencyData = Accountant_ClassicSaveData[server][character].currencyData[currencyID]
+
+    currencyData.Total = currencyData.Total or {}
+    currencyData.Total["BaselinePrime"] = currencyData.Total["BaselinePrime"] or { In = 0, Out = 0 }
+
+    if delta > 0 then
+        currencyData.Total["BaselinePrime"].In = (currencyData.Total["BaselinePrime"].In or 0) + delta
+    else
+        currencyData.Total["BaselinePrime"].Out = (currencyData.Total["BaselinePrime"].Out or 0) + (-delta)
+    end
+
+    -- Touch last update
+    Accountant_ClassicSaveData[server][character].currencyOptions = Accountant_ClassicSaveData[server][character].currencyOptions or {}
+    Accountant_ClassicSaveData[server][character].currencyOptions.lastUpdate = time()
+
+    SafeLogDebug("Applied Total-only BaselinePrime delta: id=%d delta=%+d", currencyID, delta)
+    return true
+end
     -- Normalize discovery keys: move string numeric keys (e.g., "3008") to numeric keys (3008)
     do
         local moved = 0

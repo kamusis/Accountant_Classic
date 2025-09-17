@@ -51,6 +51,121 @@ local function IsCurrencyTotalEmpty(currencyID)
     return true
 end
 
+-- Specialized handler for account-wide currencies whose API quantityChange is unreliable (e.g., Trader's Tender 2032)
+-- Behavior:
+-- - On first sighting in-session (not primed):
+--   * If quantityChange == 0 or nil: perform a Total-only reconcile (new - lastKnown) via Storage:ApplyTotalOnlyBaselineDelta,
+--     then prime in-memory and return without logging a normal transaction.
+--   * If quantityChange ~= 0: compute pre = new - quantityChange, reconcile (pre - lastKnown) to Total-only if needed,
+--     then record the normal event delta using the provided gain/lost source, prime in-memory and return.
+-- - On subsequent events: always compute delta = new - sessionLast and record with event source.
+local function HandleZeroChangeCurrency(self, currencyID, newQuantity, quantityChange, quantityGainSource, quantityLostSource)
+    -- Resolve effective new amount
+    local effectiveNew = newQuantity
+    if effectiveNew == nil then
+        effectiveNew = self:GetCurrentCurrencyAmount(currencyID)
+    end
+
+    -- Read lastKnown from Storage Total.net
+    local lastKnown, hadLastKnown = 0, false
+    if CurrencyTracker.Storage and CurrencyTracker.Storage.GetCurrencyData then
+        local tdata = CurrencyTracker.Storage:GetCurrencyData(currencyID, "Total")
+        if tdata and type(tdata.net) == "number" then
+            lastKnown = tdata.net or 0
+            hadLastKnown = true
+        end
+    end
+
+    -- Helper to persist a Total-only reconcile (ACCOUNT_SYNC semantics)
+    local function ApplyReconcile(delta)
+        if delta ~= 0 and CurrencyTracker.Storage and CurrencyTracker.Storage.ApplyTotalOnlyBaselineDelta then
+            if CurrencyTracker.Storage:ApplyTotalOnlyBaselineDelta(currencyID, delta) then
+                CurrencyTracker:LogDebug("[TT 2032] Total-only reconcile applied id=%s delta=%+d (lastKnown=%s -> new=%s)",
+                    tostring(currencyID), delta, tostring(lastKnown), tostring(effectiveNew))
+            end
+        end
+    end
+
+    -- Helper to derive a unified source key from event
+    local function GetSourceKey()
+        local src = tonumber(quantityGainSource) or tonumber(quantityLostSource)
+        return src or "Unknown"
+    end
+
+    -- First sighting in this session
+    if not primedCurrencies[currencyID] then
+        if quantityChange ~= nil and quantityChange ~= 0 then
+            -- Rare: first event already carries a concrete delta
+            local pre = (effectiveNew or 0) - quantityChange
+            local base = hadLastKnown and lastKnown or pre
+            local syncDelta = pre - base
+            ApplyReconcile(syncDelta)
+
+            -- Record the actual event using the event's gain/lost source as-is
+            if quantityChange ~= 0 and CurrencyTracker.DataManager then
+                local sourceKey = GetSourceKey()
+                -- Metadata (optional)
+                if CurrencyTracker.Storage and CurrencyTracker.Storage.RecordEventMetadata then
+                    local sign = (quantityChange > 0) and 1 or -1
+                    CurrencyTracker.Storage:RecordEventMetadata(currencyID, quantityGainSource, quantityLostSource, sign)
+                end
+                CurrencyTracker.DataManager:TrackCurrencyChange(currencyID, quantityChange, sourceKey)
+                CurrencyTracker:LogDebug("[TT 2032] First event delta logged id=%s delta=%+d src=%s", tostring(currencyID), quantityChange, tostring(sourceKey))
+            end
+
+            lastCurrencyAmounts[currencyID] = effectiveNew or 0
+            primedCurrencies[currencyID] = true
+            return true
+        else
+            -- Typical: API reports 0 change; do a one-time login reconcile, then prime
+            local base = hadLastKnown and lastKnown or (effectiveNew or 0)
+            local syncDelta = (effectiveNew or 0) - base
+            ApplyReconcile(syncDelta)
+
+            lastCurrencyAmounts[currencyID] = effectiveNew or 0
+            primedCurrencies[currencyID] = true
+            CurrencyTracker:LogDebug("[TT 2032] First sighting primed id=%s new=%s (reconcile=%+d)", tostring(currencyID), tostring(effectiveNew), syncDelta)
+            return true
+        end
+    end
+
+    -- Subsequent events
+    -- For Trader's Tender, zero-change events should never create a transaction.
+    -- This covers cases where login priming seeded an incorrect snapshot (e.g., read 0),
+    -- and the first live event arrives with quantityChange==0. We simply update the
+    -- in-memory snapshot and exit without logging.
+    if quantityChange == nil or quantityChange == 0 then
+        local old = lastCurrencyAmounts[currencyID] or 0
+        lastCurrencyAmounts[currencyID] = effectiveNew or 0
+        primedCurrencies[currencyID] = true
+        CurrencyTracker:LogDebug("[TT 2032] Subsequent zero-change ignored id=%s old=%s new=%s", tostring(currencyID), tostring(old), tostring(effectiveNew))
+        return true
+    end
+
+    -- Otherwise, rely on inferred delta new - sessionLast
+    local old = lastCurrencyAmounts[currencyID] or 0
+    local delta = (effectiveNew or 0) - old
+    if delta ~= 0 then
+        local sourceKey = GetSourceKey()
+        -- Metadata (optional)
+        if CurrencyTracker.Storage and CurrencyTracker.Storage.RecordEventMetadata then
+            local sign = (delta > 0) and 1 or -1
+            CurrencyTracker.Storage:RecordEventMetadata(currencyID, quantityGainSource, quantityLostSource, sign)
+        end
+        if CurrencyTracker.DataManager then
+            CurrencyTracker.DataManager:TrackCurrencyChange(currencyID, delta, sourceKey)
+        end
+        CurrencyTracker:LogDebug("[TT 2032] Subsequent delta logged id=%s old=%s new=%s delta=%+d src=%s",
+            tostring(currencyID), tostring(old), tostring(effectiveNew), delta, tostring(sourceKey))
+    end
+
+    lastCurrencyAmounts[currencyID] = effectiveNew or 0
+    primedCurrencies[currencyID] = true
+    return true
+end
+
+-- NOTE: Total-only baseline deltas are centralized in Storage:ApplyTotalOnlyBaselineDelta.
+
 local function PrimeBaselineTotalOnly(currencyID, amount)
     if not currencyID or not amount or amount <= 0 then return false end
     if not EnsureSavedVariablesStructure or not GetCurrentServerAndCharacter then return false end
@@ -282,34 +397,40 @@ function EventHandler:PrimeDiscoveredCurrenciesOnLogin()
         return
     end
     local discovered = CurrencyTracker.Storage:GetDiscoveredCurrencies() or {}
-    local checked, primed, ensured = 0, 0, 0
+    local checked, repaired, ensured = 0, 0, 0
     for id, _ in pairs(discovered) do
         local currencyID = tonumber(id)
         if currencyID then
             checked = checked + 1
+            -- Read live and store (Total.net)
             local liveAmt = self:GetCurrentCurrencyAmount(currencyID) or 0
-            if IsCurrencyTotalEmpty(currencyID) and liveAmt > 0 then
-                PrimeBaselineTotalOnly(currencyID, liveAmt)
-                primed = primed + 1
-                CurrencyTracker:LogDebug("[Login Prime] id=%s baseline=%s (from live)", tostring(currencyID), tostring(liveAmt))
+            local storeNet = 0
+            if CurrencyTracker.Storage and CurrencyTracker.Storage.GetCurrencyData then
+                local tdata = CurrencyTracker.Storage:GetCurrencyData(currencyID, "Total")
+                if tdata and type(tdata.net) == "number" then
+                    storeNet = tdata.net or 0
+                end
+            end
+            local delta = (liveAmt or 0) - (storeNet or 0)
+            if delta ~= 0 then
+                if CurrencyTracker.Storage and CurrencyTracker.Storage.ApplyTotalOnlyBaselineDelta and CurrencyTracker.Storage:ApplyTotalOnlyBaselineDelta(currencyID, delta) then
+                    repaired = repaired + 1
+                    CurrencyTracker:LogDebug("[Login Prime Repair] id=%s store=%s live=%s applied=%+d", tostring(currencyID), tostring(storeNet), tostring(liveAmt), delta)
+                end
             else
-                -- Ensure structures exist for consistency even if live is 0
+                -- Ensure structures exist even if equal/zero
                 if CurrencyTracker.Storage and CurrencyTracker.Storage.InitializeCurrencyData then
                     CurrencyTracker.Storage:InitializeCurrencyData(currencyID)
                 end
                 ensured = ensured + 1
             end
-            -- Prime in-memory snapshot so subsequent diffs are based on live
+            -- Seed in-memory snapshot to live to prevent drift and 0-change events from causing spikes
             lastCurrencyAmounts[currencyID] = liveAmt
-            -- IMPORTANT: Only mark as primed when we actually had a positive live and (possibly) wrote baseline.
-            -- If live==0, leave it unprimed so the first real event can perform baseline inference correctly.
-            if liveAmt > 0 then
-                primedCurrencies[currencyID] = true
-            end
+            primedCurrencies[currencyID] = true
         end
     end
-    -- Always print a concise summary, even if nothing was discovered/primed yet
-    local msg = string.format("[AC CT] Login prime summary: checked=%d, primed=%d (>0 live), ensured=%d (0 live)", checked, primed, ensured)
+    -- Always print a concise summary
+    local msg = string.format("[AC CT] Login prime summary: checked=%d, repaired=%d (delta != 0), ensured=%d (delta == 0)", checked, repaired, ensured)
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
         DEFAULT_CHAT_FRAME:AddMessage(msg, 0.2, 1.0, 0.2)
     else
@@ -417,22 +538,47 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
         end
     end
 
-    local old = lastCurrencyAmounts[currencyID] or 0
-    local change = quantityChange
-    if change == nil then
-        change = (newQuantity or 0) - old
+    -- Special-case: Trader's Tender (2032) uses a dedicated handler because API quantityChange is unreliable (often 0)
+    if currencyID == 2032 then
+        if HandleZeroChangeCurrency(self, currencyID, newQuantity, quantityChange, quantityGainSource, quantityLostSource) then
+            return
+        end
     end
 
-    -- Sign-correction guard:
-    -- On pre-11.0.2 clients, quantityChange could be absolute (always positive).
-    -- Use the authoritative direction from (new - old) when both are available and magnitudes match but sign differs.
-    if quantityChange ~= nil and newQuantity ~= nil then
-        local diff = (newQuantity or 0) - old
-        if diff ~= 0 and math.abs(diff) == math.abs(change) then
+    -- Determine previous snapshot (old). If no in-memory snapshot exists, seed from Storage Total.net
+    local old = lastCurrencyAmounts[currencyID]
+    if old == nil then
+        old = 0
+        if CurrencyTracker.Storage and CurrencyTracker.Storage.GetCurrencyData then
+            local tdata = CurrencyTracker.Storage:GetCurrencyData(currencyID, "Total")
+            if tdata and type(tdata.net) == "number" then
+                old = tdata.net or 0
+                lastCurrencyAmounts[currencyID] = old
+                primedCurrencies[currencyID] = true
+                CurrencyTracker:LogDebug("Seeded first snapshot from Total.net for id=%s old=%s", tostring(currencyID), tostring(old))
+            end
+        end
+    end
+    -- Resolve an effective new amount for diff calculations
+    local effectiveNew = newQuantity
+    if effectiveNew == nil then
+        effectiveNew = self:GetCurrentCurrencyAmount(currencyID)
+    end
+
+    -- Compute change with robust fallbacks:
+    -- 1) If quantityChange is nil or 0, fall back to (effectiveNew - old)
+    -- 2) If quantityChange present but sign disagrees with (new - old) at equal magnitude, trust the diff
+    local inferred = (effectiveNew or 0) - old
+    local change
+    if quantityChange == nil or quantityChange == 0 then
+        change = inferred
+    else
+        change = quantityChange
+        if inferred ~= 0 and math.abs(inferred) == math.abs(change) then
             local changePos = change > 0
-            local diffPos = diff > 0
+            local diffPos = inferred > 0
             if changePos ~= diffPos then
-                change = diff
+                change = inferred
             end
         end
     end
@@ -441,7 +587,7 @@ function EventHandler:ProcessCurrencyChange(currencyID, newQuantity, quantityCha
     -- regardless of in-memory primed flag. This handles ordering where an early event may arrive
     -- before login priming, and ensures Total gets its one-time baseline when appropriate.
     if quantityChange ~= nil and IsCurrencyTotalEmpty and IsCurrencyTotalEmpty(currencyID) then
-        local effNew = newQuantity
+        local effNew = effectiveNew
         if effNew == nil then
             effNew = self:GetCurrentCurrencyAmount(currencyID)
         end
