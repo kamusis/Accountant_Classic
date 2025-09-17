@@ -130,10 +130,34 @@ local function HandleZeroChangeCurrency(self, currencyID, newQuantity, quantityC
     end
 
     -- Subsequent events
-    -- For Trader's Tender, zero-change events should never create a transaction.
-    -- This covers cases where login priming seeded an incorrect snapshot (e.g., read 0),
-    -- and the first live event arrives with quantityChange==0. We simply update the
-    -- in-memory snapshot and exit without logging.
+    if currencyID == 2032 then
+        local old = lastCurrencyAmounts[currencyID] or 0
+        local delta = (effectiveNew or 0) - old
+
+        if delta == 0 then
+            lastCurrencyAmounts[currencyID] = effectiveNew or 0
+            primedCurrencies[currencyID] = true
+            CurrencyTracker:LogDebug("[TT 2032] Subsequent zero-change ignored id=%s old=%s new=%s", tostring(currencyID), tostring(old), tostring(effectiveNew))
+            return true
+        end
+
+        local sourceKey = GetSourceKey()
+        if CurrencyTracker.Storage and CurrencyTracker.Storage.RecordEventMetadata then
+            local sign = (delta > 0) and 1 or -1
+            CurrencyTracker.Storage:RecordEventMetadata(currencyID, quantityGainSource, quantityLostSource, sign)
+        end
+        if CurrencyTracker.DataManager then
+            CurrencyTracker.DataManager:TrackCurrencyChange(currencyID, delta, sourceKey)
+        end
+        CurrencyTracker:LogDebug("[TT 2032] Subsequent inferred delta logged id=%s old=%s new=%s delta=%+d src=%s",
+            tostring(currencyID), tostring(old), tostring(effectiveNew), delta, tostring(sourceKey))
+
+        lastCurrencyAmounts[currencyID] = effectiveNew or 0
+        primedCurrencies[currencyID] = true
+        return true
+    end
+
+    -- For other currencies, maintain the existing quantityChange-based handling
     if quantityChange == nil or quantityChange == 0 then
         local old = lastCurrencyAmounts[currencyID] or 0
         lastCurrencyAmounts[currencyID] = effectiveNew or 0
