@@ -118,7 +118,7 @@ local function HandleZeroChangeCurrency(self, currencyID, newQuantity, quantityC
             return true
         else
             -- Typical: API reports 0 change; do a one-time login reconcile, then prime
-            local base = hadLastKnown and lastKnown or (effectiveNew or 0)
+            local base = hadLastKnown and lastKnown or 0
             local syncDelta = (effectiveNew or 0) - base
             ApplyReconcile(syncDelta)
 
@@ -130,15 +130,34 @@ local function HandleZeroChangeCurrency(self, currencyID, newQuantity, quantityC
     end
 
     -- Subsequent events
-    -- For Trader's Tender, zero-change events should never create a transaction.
-    -- This covers cases where login priming seeded an incorrect snapshot (e.g., read 0),
-    -- and the first live event arrives with quantityChange==0. We simply update the
-    -- in-memory snapshot and exit without logging.
+    -- For Trader's Tender, zero-change events should not create a transaction unless
+    -- the live amount actually differs from our snapshot. This covers cases where
+    -- login priming seeded an incorrect snapshot (e.g., read 0), and the first live
+    -- event arrives with quantityChange==0 but a different total. We reconcile based on
+    -- the inferred delta when that happens.
     if quantityChange == nil or quantityChange == 0 then
         local old = lastCurrencyAmounts[currencyID] or 0
+        local inferred = (effectiveNew or 0) - old
+        if inferred == 0 then
+            lastCurrencyAmounts[currencyID] = effectiveNew or 0
+            primedCurrencies[currencyID] = true
+            CurrencyTracker:LogDebug("[TT 2032] Subsequent zero-change ignored id=%s old=%s new=%s", tostring(currencyID), tostring(old), tostring(effectiveNew))
+            return true
+        end
+
+        local sourceKey = GetSourceKey()
+        if CurrencyTracker.Storage and CurrencyTracker.Storage.RecordEventMetadata then
+            local sign = (inferred > 0) and 1 or -1
+            CurrencyTracker.Storage:RecordEventMetadata(currencyID, quantityGainSource, quantityLostSource, sign)
+        end
+        if CurrencyTracker.DataManager then
+            CurrencyTracker.DataManager:TrackCurrencyChange(currencyID, inferred, sourceKey)
+        end
+        CurrencyTracker:LogDebug("[TT 2032] Subsequent inferred delta logged id=%s old=%s new=%s delta=%+d src=%s",
+            tostring(currencyID), tostring(old), tostring(effectiveNew), inferred, tostring(sourceKey))
+
         lastCurrencyAmounts[currencyID] = effectiveNew or 0
         primedCurrencies[currencyID] = true
-        CurrencyTracker:LogDebug("[TT 2032] Subsequent zero-change ignored id=%s old=%s new=%s", tostring(currencyID), tostring(old), tostring(effectiveNew))
         return true
     end
 
