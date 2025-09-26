@@ -97,7 +97,7 @@ local function HandleZeroChangeCurrency(self, currencyID, newQuantity, quantityC
         if quantityChange ~= nil and quantityChange ~= 0 then
             -- Rare: first event already carries a concrete delta
             local pre = (effectiveNew or 0) - quantityChange
-            local base = hadLastKnown and lastKnown or pre
+            local base = hadLastKnown and lastKnown or 0
             local syncDelta = pre - base
             ApplyReconcile(syncDelta)
 
