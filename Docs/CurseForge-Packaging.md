@@ -26,6 +26,9 @@ git push origin master
 # 2) Create an annotated alpha tag on the current commit
 git tag -a 3.0.00-alpha.2 -m "Release 3.0.00-alpha.2"
 
+# or want to tag a specific commit:
+git tag -a 3.0.00-alpha.3 638e8592eafc51f4aaef436d640637af8ecbe5a6 -m "Release 3.0.00-alpha.3 (Currency Tracker UI prototype)"
+
 # 3) Push the tag to trigger the packager
 git push origin 3.0.00-alpha.2
 ```
