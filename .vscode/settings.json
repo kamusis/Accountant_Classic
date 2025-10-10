@@ -75,6 +75,14 @@
       "MerchantFrame",
       "TradeFrame",
       "MailFrame",
-      "SlashCmdList"
+      "SlashCmdList",
+      "UIErrorsFrame",
+      "UIDropDownMenu_Initialize",
+      "UIDropDownMenu_SetWidth",
+      "UIDropDownMenu_SetButtonWidth",
+      "UIDropDownMenu_SetSelectedValue",
+      "UIDropDownMenu_JustifyText",
+      "UIDropDownMenu_AddButton",
+      "UIDropDownMenu_CreateInfo"
     ]
   }
