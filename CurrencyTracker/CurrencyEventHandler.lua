@@ -136,7 +136,17 @@ local function HandleZeroChangeCurrency(self, currencyID, newQuantity, quantityC
     -- event arrives with quantityChange==0 but a different total. We reconcile based on
     -- the inferred delta when that happens.
     if quantityChange == nil or quantityChange == 0 then
-        local old = lastCurrencyAmounts[currencyID] or 0
+        local old = lastCurrencyAmounts[currencyID]
+        if hadLastKnown then
+            local storedNet = lastKnown or 0
+            if old == nil or math.abs((old or 0) - storedNet) > 0 then
+                -- Session snapshot drifted; trust persisted Total.net to avoid double counting full balances.
+                old = storedNet
+                lastCurrencyAmounts[currencyID] = storedNet
+                CurrencyTracker:LogDebug("[TT 2032] Snapshot drift corrected using Total.net id=%s store=%s", tostring(currencyID), tostring(storedNet))
+            end
+        end
+        old = old or 0
         local inferred = (effectiveNew or 0) - old
         if inferred == 0 then
             lastCurrencyAmounts[currencyID] = effectiveNew or 0
